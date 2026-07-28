@@ -9,6 +9,7 @@ import api from "@/lib/api";
 import {
   X, Loader2, Zap, Calendar,
   User, Tag, ListChecks, ChevronDown, Plus, Trash2,
+  AlignLeft, Target, AlertCircle, Users, Monitor, Layers, BookOpen,
 } from "lucide-react";
 
 /* ── Default statuses (overridden by localStorage if admin set them) */
@@ -273,6 +274,107 @@ function SprintPicker({ value, onChange }: { value: string; onChange: (v: string
   );
 }
 
+/* ── Priority picker ── */
+const PRIORITIES = [
+  { value: "critical", label: "Critical", color: "#ef4444" },
+  { value: "high",     label: "High",     color: "#f97316" },
+  { value: "medium",   label: "Medium",   color: "#f59e0b" },
+  { value: "low",      label: "Low",      color: "#22c55e" },
+];
+
+function PriorityPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  const current = PRIORITIES.find(p => p.value === value);
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm"
+        style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: value ? "var(--text)" : "var(--text-3)" }}>
+        {current ? (
+          <span className="px-2 py-0.5 rounded-md text-xs font-semibold text-white" style={{ background: current.color }}>{current.label}</span>
+        ) : <span>Select priority…</span>}
+        <ChevronDown className="w-3.5 h-3.5 ml-1" style={{ color: "var(--text-3)" }} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 rounded-xl shadow-xl py-2 w-44"
+          style={{ background: "var(--bg-panel)", border: "1px solid var(--border-strong)" }}>
+          {PRIORITIES.map(p => (
+            <button key={p.value} type="button"
+              onClick={() => { onChange(p.value === value ? "" : p.value); setOpen(false); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left"
+              style={{ background: value === p.value ? "var(--accent-bg)" : "transparent", color: "var(--text)" }}
+              onMouseEnter={e => { if (value !== p.value) e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={e => { if (value !== p.value) e.currentTarget.style.background = "transparent"; }}>
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: p.color }} />
+              {p.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Multi-tag picker (from localStorage key) ── */
+function MultiTagPicker({ storageKey, value, onChange, placeholder }: {
+  storageKey: string; value: string[]; onChange: (v: string[]) => void; placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const [options, setOptions] = useState<string[]>([]);
+  useEffect(() => {
+    try { setOptions(JSON.parse(localStorage.getItem(storageKey) || "[]")); } catch { setOptions([]); }
+  }, [open, storageKey]);
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+  const toggle = (t: string) => onChange(value.includes(t) ? value.filter(x => x !== t) : [...value, t]);
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm min-w-[160px] text-left flex-wrap"
+        style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text)" }}>
+        {value.length === 0 ? (
+          <span style={{ color: "var(--text-3)" }}>{placeholder ?? "Select…"}</span>
+        ) : value.map(t => (
+          <span key={t} className="px-2 py-0.5 rounded-md text-xs font-medium text-white mr-1"
+            style={{ background: "var(--accent)" }}>{t}</span>
+        ))}
+        <ChevronDown className="w-3.5 h-3.5 ml-auto shrink-0" style={{ color: "var(--text-3)" }} />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-50 rounded-xl shadow-xl py-2 w-52"
+          style={{ background: "var(--bg-panel)", border: "1px solid var(--border-strong)" }}>
+          {options.length === 0
+            ? <p className="px-3 py-2 text-xs" style={{ color: "var(--text-3)" }}>No options yet. Add in sidebar.</p>
+            : options.map(t => (
+              <button key={t} type="button"
+                onClick={() => toggle(t)}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left"
+                style={{ background: value.includes(t) ? "var(--accent-bg)" : "transparent", color: "var(--text)" }}
+                onMouseEnter={e => { if (!value.includes(t)) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                onMouseLeave={e => { if (!value.includes(t)) e.currentTarget.style.background = "transparent"; }}>
+                <span className="w-4 h-4 rounded flex items-center justify-center border shrink-0"
+                  style={{ borderColor: value.includes(t) ? "var(--accent)" : "var(--border)", background: value.includes(t) ? "var(--accent)" : "transparent" }}>
+                  {value.includes(t) && <span className="text-white text-[10px]">✓</span>}
+                </span>
+                {t}
+              </button>
+            ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* Inner modal — mounted fresh on every open, so initial state is always correct */
 function NewDocModalInner({ onClose, defaultStatus }: Omit<Props, "open">) {
   const router = useRouter();
@@ -284,9 +386,16 @@ function NewDocModalInner({ onClose, defaultStatus }: Omit<Props, "open">) {
 
   const [title, setTitle] = useState("New project");
   const [status, setStatus] = useState(initStatus);
+  const [description, setDescription] = useState("");
   const [productOwner, setProductOwner] = useState(user?.name ?? "");
   const [liveDate, setLiveDate] = useState("");
+  const [primaryMetric, setPrimaryMetric] = useState("");
+  const [priority, setPriority] = useState("");
+  const [requestedBy, setRequestedBy] = useState("");
+  const [platforms, setPlatforms] = useState<string[]>([]);
   const [projectType, setProjectType] = useState("");
+  const [impacts, setImpacts] = useState<string[]>([]);
+  const [summary, setSummary] = useState("");
   const [plannedSprint, setPlannedSprint] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -299,7 +408,20 @@ function NewDocModalInner({ onClose, defaultStatus }: Omit<Props, "open">) {
   const handleCreate = async () => {
     setSaving(true);
     try {
-      const prdMeta = { prd_status: status, product_owner: productOwner, live_date: liveDate, project_type: projectType, planned_sprint: plannedSprint };
+      const prdMeta = {
+        prd_status: status,
+        description,
+        product_owner: productOwner,
+        live_date: liveDate,
+        primary_metric: primaryMetric,
+        priority,
+        requested_by: requestedBy,
+        platforms,
+        project_type: projectType,
+        impacts,
+        summary,
+        planned_sprint: plannedSprint,
+      };
       const { data } = await api.post("/documents/", {
         title: title || "Untitled",
         content: { type: "doc", content: [], attrs: { prdMeta } },
@@ -318,42 +440,61 @@ function NewDocModalInner({ onClose, defaultStatus }: Omit<Props, "open">) {
     background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text)",
     borderRadius: 8, padding: "6px 10px", fontSize: 13, outline: "none", width: "100%",
   };
+  const TEXTAREA_STYLE: React.CSSProperties = {
+    ...FIELD_STYLE, resize: "vertical", minHeight: 64, fontFamily: "inherit",
+  };
 
   const rows: { icon: any; label: string; node: React.ReactNode }[] = [
-    { icon: Zap,        label: "Status",         node: <StatusPicker value={status} onChange={setStatus} /> },
-    { icon: User,       label: "Product Owner",   node: <ProductOwnerPicker value={productOwner} onChange={setProductOwner} /> },
-    { icon: Calendar,   label: "Live",            node: <input type="date" value={liveDate} onChange={e => setLiveDate(e.target.value)} style={FIELD_STYLE} /> },
-    { icon: Tag,        label: "Project Type",    node: <ProjectTypePicker value={projectType} onChange={setProjectType} /> },
-    { icon: ListChecks, label: "Planned Sprint",  node: <SprintPicker value={plannedSprint} onChange={setPlannedSprint} /> },
+    { icon: Zap,         label: "Status",          node: <StatusPicker value={status} onChange={setStatus} /> },
+    { icon: User,        label: "Product Owner",    node: <ProductOwnerPicker value={productOwner} onChange={setProductOwner} /> },
+    { icon: Calendar,    label: "Live",             node: <input type="date" value={liveDate} onChange={e => setLiveDate(e.target.value)} style={FIELD_STYLE} /> },
+    { icon: Target,      label: "Primary Metric",   node: <input type="text" value={primaryMetric} onChange={e => setPrimaryMetric(e.target.value)} placeholder="e.g. user experience" style={FIELD_STYLE} /> },
+    { icon: AlertCircle, label: "Priority",         node: <PriorityPicker value={priority} onChange={setPriority} /> },
+    { icon: Users,       label: "Requested By",     node: <input type="text" value={requestedBy} onChange={e => setRequestedBy(e.target.value)} placeholder="e.g. Operations Team" style={FIELD_STYLE} /> },
+    { icon: Monitor,     label: "Platforms",        node: <MultiTagPicker storageKey="prd_platforms" value={platforms} onChange={setPlatforms} placeholder="Select platforms…" /> },
+    { icon: Tag,         label: "Project Type",     node: <ProjectTypePicker value={projectType} onChange={setProjectType} /> },
+    { icon: Layers,      label: "Impacts",          node: <MultiTagPicker storageKey="prd_impacts" value={impacts} onChange={setImpacts} placeholder="Select impacts…" /> },
+    { icon: ListChecks,  label: "Planned Sprint",   node: <SprintPicker value={plannedSprint} onChange={setPlannedSprint} /> },
   ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-xl rounded-2xl shadow-2xl"
-        style={{ background: "var(--bg-panel)", border: "1px solid var(--border-strong)" }}>
+      <div className="w-full max-w-xl rounded-2xl shadow-2xl flex flex-col"
+        style={{ background: "var(--bg-panel)", border: "1px solid var(--border-strong)", maxHeight: "90vh" }}>
 
-        <div className="flex items-center gap-3 px-6 pt-5 pb-2">
+        <div className="flex items-center gap-3 px-6 pt-5 pb-2 shrink-0">
           <div className="flex-1" />
           <button onClick={onClose} className="p-1.5 rounded-lg" style={{ color: "var(--text-3)" }}>
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="px-6 pb-4">
+        <div className="px-6 pb-4 shrink-0">
           <input
             autoFocus
             value={title}
             onChange={e => setTitle(e.target.value)}
-            onKeyDown={e => { if (e.key === "Enter") handleCreate(); }}
             className="w-full text-3xl font-bold bg-transparent outline-none border-l-2 pl-2"
             style={{ color: "var(--text)", borderColor: "var(--accent)" }}
             placeholder="New project"
           />
         </div>
 
-        <div className="px-6 pb-4 space-y-2.5">
+        {/* Scrollable body */}
+        <div className="overflow-y-auto flex-1 px-6 pb-4 space-y-3">
+          {/* Description */}
+          <div className="flex items-start gap-4">
+            <div className="flex items-center gap-2 w-36 shrink-0 pt-1.5">
+              <AlignLeft className="w-4 h-4 shrink-0" style={{ color: "var(--text-3)" }} />
+              <span className="text-sm" style={{ color: "var(--text-2)" }}>Description</span>
+            </div>
+            <textarea value={description} onChange={e => setDescription(e.target.value)}
+              placeholder="What is this project about?"
+              style={{ ...TEXTAREA_STYLE, flex: 1 }} />
+          </div>
+
           {rows.map(({ icon: Icon, label, node }) => (
             <div key={label} className="flex items-center gap-4">
               <div className="flex items-center gap-2 w-36 shrink-0">
@@ -363,15 +504,26 @@ function NewDocModalInner({ onClose, defaultStatus }: Omit<Props, "open">) {
               <div className="flex-1 min-w-0">{node}</div>
             </div>
           ))}
+
+          {/* Summary */}
+          <div className="flex items-start gap-4">
+            <div className="flex items-center gap-2 w-36 shrink-0 pt-1.5">
+              <BookOpen className="w-4 h-4 shrink-0" style={{ color: "var(--text-3)" }} />
+              <span className="text-sm" style={{ color: "var(--text-2)" }}>Summary</span>
+            </div>
+            <textarea value={summary} onChange={e => setSummary(e.target.value)}
+              placeholder="Brief summary of the project goal…"
+              style={{ ...TEXTAREA_STYLE, flex: 1 }} />
+          </div>
         </div>
 
-        <div className="px-6 pb-5 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm rounded-xl"
+        <div className="px-6 pb-5 flex justify-end gap-2 shrink-0" style={{ borderTop: "1px solid var(--border)" }}>
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-xl mt-3"
             style={{ background: "var(--bg-subtle)", color: "var(--text-2)" }}>
             Cancel
           </button>
           <button onClick={handleCreate} disabled={saving}
-            className="flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-xl text-white disabled:opacity-60"
+            className="flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-xl text-white disabled:opacity-60 mt-3"
             style={{ background: "var(--accent)" }}>
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
             Create Document
