@@ -20,6 +20,7 @@ function JoinPageInner() {
   const [info, setInfo] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw] = useState(false);
@@ -52,7 +53,7 @@ function JoinPageInner() {
     try {
       const body: any = { password, name };
       if (token) body.token = token;
-      if (linkToken) { body.link_token = linkToken; body.company_id = companyParam; body.email = info?.email || ""; }
+      if (linkToken) { body.link_token = linkToken; body.company_id = companyParam; body.email = info?.email || email; }
       const { data } = await api.post("/companies/invite/accept/", body);
       setAuth(data.user, data.access, data.refresh);
       setActiveCompany(data.company_id);
@@ -118,8 +119,8 @@ function JoinPageInner() {
                   placeholder="you@example.com"
                   className="w-full text-sm rounded-xl px-3 py-2.5 outline-none"
                   style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text)" }}
-                  value={info?.email_input || ""}
-                  onChange={(e) => setInfo((p: any) => ({ ...p, email_input: e.target.value }))}
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                 />
               </div>
             )}
