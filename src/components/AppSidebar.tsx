@@ -12,7 +12,7 @@ import {
   LayoutDashboard, FileText, Star, Clock, Share2, FolderOpen,
   Archive, Trash2, Settings, Users, ChevronLeft, ChevronRight,
   Plus, Building2, Search, Webhook, Tag, X, ChevronDown, ChevronRight as ChevronR,
-  Zap, ListOrdered, Activity, Monitor, Layers,
+  Zap, ListOrdered, Activity, Monitor, Layers, PenTool,
 } from "lucide-react";
 import Image from "next/image";
 import { getPRDStatuses, savePRDStatuses, PRDStatus } from "./NewDocModal";
@@ -23,6 +23,7 @@ const navItems = [
   { label: "Starred", href: "/starred", icon: Star },
   { label: "Shared with me", href: "/shared", icon: Share2 },
   { label: "My Documents", href: "/documents", icon: FileText },
+  { label: "Wireframes", href: "/wireframes", icon: PenTool },
   { label: "Categories", href: "/categories", icon: FolderOpen },
   { label: "Activity Logs", href: "/activity", icon: Activity },
   { label: "Archived", href: "/archived", icon: Archive },
