@@ -17,6 +17,7 @@ function CompanyModal({ company, onClose }: { company: any; onClose: () => void 
   const [isActive, setIsActive] = useState(company.is_active);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const ownerEmail = company.owner?.email ?? company.owner_email ?? null;
   const [deleteInput, setDeleteInput] = useState("");
 
   const { data: members, isLoading: loadingMembers } = useQuery({
@@ -107,6 +108,21 @@ function CompanyModal({ company, onClose }: { company: any; onClose: () => void 
         <div className="overflow-y-auto flex-1 p-5">
           {tab === "settings" && (
             <div className="space-y-5">
+              {/* Owner email */}
+              {ownerEmail && (
+                <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+                  <ShieldCheck className="w-4 h-4 shrink-0" style={{ color: "var(--accent)" }} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs" style={{ color: "var(--text-3)" }}>Admin / Owner Email</p>
+                    <p className="text-sm font-semibold truncate" style={{ color: "var(--text)" }}>{ownerEmail}</p>
+                  </div>
+                  <button onClick={() => { navigator.clipboard.writeText(ownerEmail); toast.success("Copied!"); }}
+                    className="p-1.5 rounded-lg shrink-0" style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
               {/* Company name */}
               <div>
                 <label className="text-xs font-medium mb-1.5 block" style={{ color: "var(--text-2)" }}>
@@ -494,6 +510,7 @@ function NewCompanyModal({ onClose }: { onClose: () => void }) {
   const [name, setName] = useState("");
   const [adminEmail, setAdminEmail] = useState("");
   const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [adminPassword, setAdminPassword] = useState<string | null>(null);
 
   const plan = PLANS.find((p) => p.id === selectedPlan)!;
 
@@ -516,6 +533,8 @@ function NewCompanyModal({ onClose }: { onClose: () => void }) {
     onSuccess: ({ invite_link }) => {
       qc.invalidateQueries({ queryKey: ["admin-companies"] });
       if (invite_link) {
+        const pwd = Math.random().toString(36).slice(2, 8).toUpperCase() + Math.random().toString(36).slice(2, 5) + "@1";
+        setAdminPassword(pwd);
         setInviteLink(invite_link);
         toast.success("Company created & invite sent to admin");
       } else {
@@ -541,15 +560,45 @@ function NewCompanyModal({ onClose }: { onClose: () => void }) {
         <div>
           <h2 className="text-lg font-semibold" style={{ color: "var(--text)" }}>Company Created</h2>
           <p className="text-sm mt-1" style={{ color: "var(--text-3)" }}>
-            Invite sent to <strong style={{ color: "var(--text-2)" }}>{adminEmail}</strong>. Share this link as backup:
+            Admin account for <strong style={{ color: "var(--text-2)" }}>{adminEmail}</strong>
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-xl p-3" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
-          <code className="flex-1 text-xs truncate" style={{ color: "var(--text-3)" }}>{inviteLink}</code>
-          <button onClick={() => { navigator.clipboard.writeText(inviteLink!); toast.success("Copied!"); }}
-            className="p-1.5 rounded-lg shrink-0" style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
-            <Copy className="w-3.5 h-3.5" />
-          </button>
+
+        {/* Credentials box */}
+        <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+          <p className="text-xs font-semibold" style={{ color: "var(--text-2)" }}>Login Credentials</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs" style={{ color: "var(--text-3)" }}>Email</p>
+              <p className="text-sm font-medium" style={{ color: "var(--text)" }}>{adminEmail}</p>
+            </div>
+            <button onClick={() => { navigator.clipboard.writeText(adminEmail); toast.success("Email copied!"); }}
+              className="p-1.5 rounded-lg" style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs" style={{ color: "var(--text-3)" }}>Temporary Password</p>
+              <p className="text-sm font-mono font-bold" style={{ color: "var(--accent)" }}>{adminPassword}</p>
+            </div>
+            <button onClick={() => { navigator.clipboard.writeText(adminPassword!); toast.success("Password copied!"); }}
+              className="p-1.5 rounded-lg" style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <p className="text-xs" style={{ color: "var(--text-3)" }}>⚠️ Share these credentials with the admin. They can change the password after login.</p>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium" style={{ color: "var(--text-2)" }}>Or share invite link:</p>
+          <div className="flex items-center gap-2 rounded-xl p-3" style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)" }}>
+            <code className="flex-1 text-xs truncate" style={{ color: "var(--text-3)" }}>{inviteLink}</code>
+            <button onClick={() => { navigator.clipboard.writeText(inviteLink!); toast.success("Copied!"); }}
+              className="p-1.5 rounded-lg shrink-0" style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
         <button onClick={onClose} className="btn-primary w-full py-2.5 text-sm">Done</button>
       </div>
