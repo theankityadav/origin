@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect, useRef } from "react";
 import { useAuthStore } from "@/store/auth.store";
 import { useUIStore } from "@/store/ui.store";
+import { useQuery } from "@tanstack/react-query";
+import api from "@/lib/api";
 import { cn, getInitials } from "@/lib/utils";
 import {
   LayoutDashboard, FileText, Star, Clock, Share2, FolderOpen,
@@ -188,6 +190,16 @@ export default function AppSidebar() {
   const pathname = usePathname();
   const { sidebarOpen, toggleSidebar, setSearchOpen, setNewDocOpen, theme } = useUIStore();
   const user = useAuthStore((s) => s.user);
+  const activeCompanyId = useAuthStore((s) => s.activeCompanyId);
+
+  const { data: members } = useQuery({
+    queryKey: ["members", activeCompanyId],
+    queryFn: async () => { const { data } = await api.get(`/companies/${activeCompanyId}/members/`); return data.results ?? data; },
+    enabled: !!activeCompanyId,
+    staleTime: 60_000,
+  });
+  const myMembership = members?.find((m: any) => m.user?.id === user?.id);
+  const displayRole = myMembership?.role ?? user?.role ?? "";
 
   return (
     <>
@@ -325,7 +337,7 @@ export default function AppSidebar() {
             {sidebarOpen && user && (
               <div className="min-w-0">
                 <p className="text-xs font-semibold truncate" style={{ color: "var(--text)" }}>{user.name}</p>
-                <p className="text-[11px] truncate capitalize" style={{ color: "var(--text-3)" }}>{user.role}</p>
+                <p className="text-[11px] truncate capitalize" style={{ color: "var(--text-3)" }}>{displayRole}</p>
               </div>
             )}
           </div>

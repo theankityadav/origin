@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import api from "@/lib/api";
 import toast from "react-hot-toast";
@@ -12,11 +12,21 @@ type Tab = "profile" | "password" | "security" | "workspace";
 export default function SettingsPage() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
+  const activeCompanyId = useAuthStore((s) => s.activeCompanyId);
   const [tab, setTab] = useState<Tab>("profile");
   const [name, setName] = useState(user?.name || "");
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
   const qc = useQueryClient();
+
+  const { data: members } = useQuery({
+    queryKey: ["members", activeCompanyId],
+    queryFn: async () => { const { data } = await api.get(`/companies/${activeCompanyId}/members/`); return data.results ?? data; },
+    enabled: !!activeCompanyId,
+    staleTime: 60_000,
+  });
+  const myMembership = members?.find((m: any) => m.user?.id === user?.id);
+  const displayRole = myMembership?.role ?? user?.role ?? "";
 
   const updateProfile = useMutation({
     mutationFn: () => api.patch("/auth/profile/", { name }),
@@ -111,7 +121,7 @@ export default function SettingsPage() {
               <div>
                 <label className={labelCls} style={{ color: "var(--text-2)" }}>Role</label>
                 <span className="inline-block px-3 py-1.5 text-sm rounded-xl capitalize"
-                  style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>{user?.role}</span>
+                  style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>{displayRole}</span>
               </div>
               <button onClick={() => updateProfile.mutate()} disabled={updateProfile.isPending}
                 className="btn-primary flex items-center gap-2 px-5 py-2 text-sm disabled:opacity-50">
