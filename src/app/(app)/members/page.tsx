@@ -8,7 +8,7 @@ import { getInitials, timeAgo } from "@/lib/utils";
 import {
   Users, UserPlus, Mail, Loader2, Copy, Link2,
   AlertTriangle, ShieldAlert, X, ChevronDown,
-  UserMinus, Shield, Eye, Edit3, Crown,
+  UserMinus, Shield, Eye, Edit3, Crown, FolderPlus, Trash2, ChevronRight,
 } from "lucide-react";
 import toast from "react-hot-toast";
 
@@ -142,6 +142,148 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div className="flex justify-between items-center py-1">
       <span className="text-xs" style={{ color: "var(--text-3)" }}>{label}</span>
       <span className="text-xs font-medium capitalize" style={{ color: "var(--text-2)" }}>{value}</span>
+    </div>
+  );
+}
+
+/* ── Teams Section ── */
+function TeamsSection({ companyId, members }: { companyId: string; members: any[] }) {
+  const qc = useQueryClient();
+  const [newTeamName, setNewTeamName] = useState("");
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  const { data: teams, isLoading } = useQuery({
+    queryKey: ["teams", companyId],
+    queryFn: async () => { const { data } = await api.get("/companies/teams/", { params: { company: companyId } }); return data.results ?? data; },
+    enabled: !!companyId,
+  });
+
+  const createTeam = useMutation({
+    mutationFn: () => api.post("/companies/teams/", { name: newTeamName.trim(), company: companyId }),
+    onSuccess: () => { toast.success("Team created"); setNewTeamName(""); setAdding(false); qc.invalidateQueries({ queryKey: ["teams", companyId] }); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to create team"),
+  });
+
+  const deleteTeam = useMutation({
+    mutationFn: (id: string) => api.delete(`/companies/teams/${id}/`),
+    onSuccess: () => { toast.success("Team deleted"); qc.invalidateQueries({ queryKey: ["teams", companyId] }); },
+  });
+
+  const assignTeam = useMutation({
+    mutationFn: ({ memberId, teamId }: { memberId: string; teamId: string | null }) =>
+      api.patch(`/companies/memberships/${memberId}/`, { team: teamId }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["members", companyId] }); qc.invalidateQueries({ queryKey: ["teams", companyId] }); },
+    onError: (e: any) => toast.error(e?.response?.data?.detail || "Failed to assign"),
+  });
+
+  return (
+    <div className="panel overflow-visible">
+      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: "1px solid var(--border)" }}>
+        <h2 className="text-sm font-semibold flex items-center gap-2" style={{ color: "var(--text-2)" }}>
+          <Users className="w-4 h-4" style={{ color: "var(--accent)" }} /> Teams
+        </h2>
+        <button onClick={() => setAdding(a => !a)}
+          className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg"
+          style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
+          <FolderPlus className="w-3.5 h-3.5" /> New Team
+        </button>
+      </div>
+
+      {adding && (
+        <div className="px-4 py-3 flex gap-2" style={{ borderBottom: "1px solid var(--border)" }}>
+          <input autoFocus value={newTeamName} onChange={e => setNewTeamName(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && newTeamName.trim()) createTeam.mutate(); if (e.key === "Escape") setAdding(false); }}
+            placeholder="Team name e.g. Engineering"
+            className="flex-1 text-sm rounded-xl px-3 py-2 outline-none"
+            style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text)" }} />
+          <button onClick={() => createTeam.mutate()} disabled={!newTeamName.trim() || createTeam.isPending}
+            className="text-sm px-4 py-2 rounded-xl font-medium disabled:opacity-50"
+            style={{ background: "var(--accent)", color: "#fff" }}>
+            {createTeam.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create"}
+          </button>
+          <button onClick={() => setAdding(false)} className="p-2 rounded-xl" style={{ color: "var(--text-3)" }}><X className="w-4 h-4" /></button>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--text-3)" }} /></div>
+      ) : teams?.length === 0 ? (
+        <div className="text-center py-8">
+          <Users className="w-8 h-8 mx-auto mb-2" style={{ color: "var(--border-strong)" }} />
+          <p className="text-sm" style={{ color: "var(--text-3)" }}>No teams yet. Create one to group members.</p>
+        </div>
+      ) : (
+        <div className="divide-y" style={{ borderColor: "var(--border)" }}>
+          {teams?.map((team: any) => {
+            const teamMembers = members.filter((m: any) => m.team === team.id);
+            const unassigned = members.filter((m: any) => !m.team);
+            const isOpen = expanded === team.id;
+            return (
+              <div key={team.id}>
+                <div className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+                  onClick={() => setExpanded(isOpen ? null : team.id)}
+                  onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+                  {isOpen ? <ChevronDown className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-3)" }} />
+                    : <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--text-3)" }} />}
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
+                    <Users className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold" style={{ color: "var(--text)" }}>{team.name}</p>
+                    <p className="text-xs" style={{ color: "var(--text-3)" }}>{teamMembers.length} member{teamMembers.length !== 1 ? "s" : ""}</p>
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); if (confirm(`Delete team "${team.name}"?`)) deleteTeam.mutate(team.id); }}
+                    className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100"
+                    style={{ color: "var(--danger)" }}
+                    onMouseEnter={e => (e.currentTarget.style.opacity = "1")}
+                    onMouseLeave={e => (e.currentTarget.style.opacity = "0.4")}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                {isOpen && (
+                  <div className="px-4 pb-3 space-y-1 ml-10" style={{ borderTop: "1px solid var(--border)" }}>
+                    <p className="text-xs font-medium pt-2 pb-1" style={{ color: "var(--text-3)" }}>Members in this team</p>
+                    {teamMembers.length === 0 && (
+                      <p className="text-xs" style={{ color: "var(--text-3)" }}>No members assigned yet.</p>
+                    )}
+                    {teamMembers.map((m: any) => (
+                      <div key={m.id} className="flex items-center gap-2 py-1">
+                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                          style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>{getInitials(m.user?.name)}</div>
+                        <span className="text-xs flex-1" style={{ color: "var(--text)" }}>{m.user?.name}</span>
+                        <button onClick={() => assignTeam.mutate({ memberId: m.id, teamId: null })}
+                          className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.1)", color: "#dc2626" }}>
+                          Remove
+                        </button>
+                      </div>
+                    ))}
+                    {unassigned.length > 0 && (
+                      <>
+                        <p className="text-xs font-medium pt-2 pb-1" style={{ color: "var(--text-3)" }}>Add member to team</p>
+                        {unassigned.map((m: any) => (
+                          <div key={m.id} className="flex items-center gap-2 py-1">
+                            <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
+                              style={{ background: "var(--bg-subtle)", color: "var(--text-3)" }}>{getInitials(m.user?.name)}</div>
+                            <span className="text-xs flex-1" style={{ color: "var(--text-2)" }}>{m.user?.name}</span>
+                            <button onClick={() => assignTeam.mutate({ memberId: m.id, teamId: team.id })}
+                              className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
+                              + Add
+                            </button>
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -409,6 +551,11 @@ export default function MembersPage() {
           </div>
         )}
       </div>
+
+      {/* Teams */}
+      {isAdminOrOwner && (
+        <TeamsSection companyId={activeCompanyId!} members={members ?? []} />
+      )}
 
       {/* Pending invites */}
       {invitations?.length > 0 && (
