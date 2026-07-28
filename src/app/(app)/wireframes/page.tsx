@@ -37,7 +37,7 @@ function NewWireframeModal({ onClose, companyId }: { onClose: () => void; compan
     mutationFn: () => api.post("/documents/", {
       title,
       company: companyId,
-      is_wireframe: true,
+      doc_type: "wireframe",
       visibility,
       content: { type: "wireframe", elements: [] },
     }),
@@ -153,7 +153,7 @@ export default function WireframesPage() {
   const { data: wireframes, isLoading } = useQuery({
     queryKey: ["wireframes", activeCompanyId],
     queryFn: async () => {
-      const { data } = await api.get("/documents/", { params: { company: activeCompanyId, is_wireframe: true } });
+      const { data } = await api.get("/documents/", { params: { company: activeCompanyId, doc_type: "wireframe" } });
       return data.results ?? data;
     },
     enabled: !!activeCompanyId,

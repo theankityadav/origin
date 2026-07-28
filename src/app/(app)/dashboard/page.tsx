@@ -269,7 +269,7 @@ export default function DashboardPage() {
 
   const { data: prdDocs } = useQuery({
     queryKey: ["documents", "prd-all", activeCompanyId],
-    queryFn: async () => { const { data } = await api.get("/documents/", { params }); return (data.results ?? data) as any[]; },
+    queryFn: async () => { const { data } = await api.get("/documents/", { params: { ...params, doc_type: "document" } }); return (data.results ?? data) as any[]; },
     staleTime: 0,
     refetchOnWindowFocus: true,
   });
