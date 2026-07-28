@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import api from "@/lib/api";
 import { timeAgo } from "@/lib/utils";
-import { Trash2, RotateCcw, Loader2, Search, X, CheckSquare, Square, ShieldAlert } from "lucide-react";
+import { Trash2, RotateCcw, Loader2, Search, X, CheckSquare, Square, ShieldAlert, PenTool, FileText } from "lucide-react";
 import toast from "react-hot-toast";
 import { useState, useMemo } from "react";
 
@@ -202,11 +202,23 @@ export default function TrashPage() {
                     onMouseLeave={e => { if (!isSel) e.currentTarget.style.opacity = "0"; }}>
                     {isSel ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
                   </button>
-                  <span className="text-lg shrink-0 opacity-40">{doc.icon || "📄"}</span>
+                  <span className="shrink-0 opacity-50">
+                    {doc.doc_type === "wireframe"
+                      ? <PenTool className="w-4 h-4" style={{ color: "var(--accent)" }} />
+                      : <FileText className="w-4 h-4" style={{ color: "var(--text-3)" }} />}
+                  </span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate line-through" style={{ color: "var(--text-3)" }}>
-                      {doc.title || "Untitled"}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium truncate line-through" style={{ color: "var(--text-3)" }}>
+                        {doc.title || "Untitled"}
+                      </p>
+                      {doc.doc_type === "wireframe" && (
+                        <span className="shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded-full"
+                          style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
+                          Wireframe
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs" style={{ color: "var(--text-3)" }}>
                       Deleted {timeAgo(doc.deleted_at || doc.updated_at)}
                     </p>
