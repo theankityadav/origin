@@ -111,6 +111,12 @@ export default function DocumentHeader({
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["document", doc?.id] }); toast.success("Archived"); },
   });
 
+  const trashMutation = useMutation({
+    mutationFn: () => api.post(`/documents/${doc?.id}/trash/`),
+    onSuccess: () => { toast.success("Moved to trash"); qc.invalidateQueries({ queryKey: ["documents"] }); window.location.href = "/documents"; },
+    onError: () => toast.error("Failed to move to trash"),
+  });
+
   const iconBtn = "p-2 rounded-lg transition-colors";
   const iconBtnStyle = { color: "var(--text-3)" };
   const iconBtnHover = (e: React.MouseEvent<HTMLButtonElement>) =>
@@ -318,7 +324,9 @@ export default function DocumentHeader({
               </button>
               <div className="my-1" style={{ borderTop: "1px solid var(--border)" }} />
               <button
-                className="flex items-center gap-2 px-3 py-2 text-sm w-full transition-colors"
+                onClick={() => { trashMutation.mutate(); setMenuOpen(false); }}
+                disabled={trashMutation.isPending}
+                className="flex items-center gap-2 px-3 py-2 text-sm w-full transition-colors disabled:opacity-50"
                 style={{ color: "var(--danger)" }}
                 onMouseEnter={e => (e.currentTarget.style.background = "rgba(239,68,68,0.08)")}
                 onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
