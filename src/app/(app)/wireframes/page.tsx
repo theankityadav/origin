@@ -160,8 +160,9 @@ export default function WireframesPage() {
   });
 
   const del = useMutation({
-    mutationFn: (id: string) => api.delete(`/documents/${id}/`),
-    onSuccess: () => { toast.success("Deleted"); qc.invalidateQueries({ queryKey: ["wireframes", activeCompanyId] }); },
+    mutationFn: (id: string) => api.post(`/documents/${id}/trash/`),
+    onSuccess: () => { toast.success("Moved to trash"); qc.invalidateQueries({ queryKey: ["wireframes", activeCompanyId] }); },
+    onError: () => toast.error("Failed to move to trash"),
   });
 
   const router = useRouter();
@@ -249,7 +250,7 @@ export default function WireframesPage() {
                 </div>
                 {/* Delete on hover */}
                 <button
-                  onClick={e => { e.stopPropagation(); if (confirm(`Delete "${wf.title}"?`)) del.mutate(wf.id); }}
+                  onClick={e => { e.stopPropagation(); if (confirm(`Move "${wf.title}" to trash?`)) del.mutate(wf.id); }}
                   className="absolute top-2 right-2 p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
                   style={{ background: "rgba(239,68,68,0.12)", color: "#dc2626" }}>
                   <Trash2 className="w-3.5 h-3.5" />
