@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
-import { X, Check, Link2, Users, Globe, Lock, Loader2 } from "lucide-react";
+import { X, Check, Link2, Users, Globe, Lock, Loader2, ChevronDown } from "lucide-react";
 import toast from "react-hot-toast";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +30,10 @@ export default function ShareModal({ doc, onClose }: Props) {
   const [level, setLevel] = useState("viewer");
   const [copied, setCopied] = useState(false);
   const [visibility, setVisibility] = useState(doc?.visibility || "private");
+  const [visibilityPermission, setVisibilityPermission] = useState<Record<string, string>>({
+    team: "viewer", company: "viewer", public: "viewer",
+  });
+  const [permOpen, setPermOpen] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -106,23 +110,63 @@ export default function ShareModal({ doc, onClose }: Props) {
           <div>
             <label className="text-sm font-medium mb-2 block" style={{ color: "var(--text-2)" }}>Access level</label>
             <div className="grid grid-cols-2 gap-2">
-              {VISIBILITY_OPTIONS.map(({ value, label, icon: Icon, desc }) => (
-                <button
-                  key={value}
-                  onClick={() => updateVisibility.mutate(value)}
-                  className="flex items-start gap-2 p-3 rounded-xl border text-left transition"
-                  style={{
-                    borderColor: visibility === value ? "var(--accent)" : "var(--border)",
-                    background: visibility === value ? "var(--accent-bg)" : "transparent",
-                  }}
-                >
-                  <Icon className="w-4 h-4 mt-0.5 shrink-0" style={{ color: visibility === value ? "var(--accent)" : "var(--text-3)" }} />
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: visibility === value ? "var(--accent)" : "var(--text)" }}>{label}</p>
-                    <p className="text-xs" style={{ color: "var(--text-3)" }}>{desc}</p>
+              {VISIBILITY_OPTIONS.map(({ value, label, icon: Icon, desc }) => {
+                const isSelected = visibility === value;
+                const hasPerm = value !== "private";
+                const currentPerm = PERMISSION_LEVELS.find(p => p.value === visibilityPermission[value]);
+                return (
+                  <div key={value} className="relative flex flex-col rounded-xl border transition"
+                    style={{
+                      borderColor: isSelected ? "var(--accent)" : "var(--border)",
+                      background: isSelected ? "var(--accent-bg)" : "transparent",
+                    }}>
+                    <button
+                      onClick={() => updateVisibility.mutate(value)}
+                      className="flex items-start gap-2 p-3 text-left w-full"
+                    >
+                      <Icon className="w-4 h-4 mt-0.5 shrink-0" style={{ color: isSelected ? "var(--accent)" : "var(--text-3)" }} />
+                      <div>
+                        <p className="text-sm font-medium" style={{ color: isSelected ? "var(--accent)" : "var(--text)" }}>{label}</p>
+                        <p className="text-xs" style={{ color: "var(--text-3)" }}>{desc}</p>
+                      </div>
+                    </button>
+                    {/* Permission picker — only shown when this option is selected and it's not Private */}
+                    {isSelected && hasPerm && (
+                      <div className="px-3 pb-2.5 relative">
+                        <button
+                          onClick={() => setPermOpen(permOpen === value ? null : value)}
+                          className="w-full flex items-center justify-between gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium"
+                          style={{ background: "var(--bg-panel)", border: "1px solid var(--border)", color: "var(--text)" }}
+                        >
+                          <span>{currentPerm?.label ?? "Can View"}</span>
+                          <ChevronDown className="w-3 h-3" style={{ color: "var(--text-3)" }} />
+                        </button>
+                        {permOpen === value && (
+                          <div className="absolute left-3 right-3 top-full mt-1 z-50 rounded-xl shadow-xl py-1"
+                            style={{ background: "var(--bg-panel)", border: "1px solid var(--border-strong)" }}>
+                            {PERMISSION_LEVELS.map(p => (
+                              <button key={p.value}
+                                onClick={() => {
+                                  setVisibilityPermission(prev => ({ ...prev, [value]: p.value }));
+                                  setPermOpen(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left"
+                                style={{ background: visibilityPermission[value] === p.value ? "var(--accent-bg)" : "transparent", color: "var(--text)" }}
+                                onMouseEnter={e => { if (visibilityPermission[value] !== p.value) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                                onMouseLeave={e => { if (visibilityPermission[value] !== p.value) e.currentTarget.style.background = "transparent"; }}
+                              >
+                                {visibilityPermission[value] === p.value && <Check className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--accent)" }} />}
+                                {visibilityPermission[value] !== p.value && <span className="w-3.5 h-3.5 shrink-0" />}
+                                {p.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 
