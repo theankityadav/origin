@@ -12,7 +12,7 @@ import {
   LayoutDashboard, FileText, Star, Clock, Share2, FolderOpen,
   Archive, Trash2, Settings, Users, ChevronLeft, ChevronRight,
   Plus, Building2, Search, Webhook, Tag, X, ChevronDown, ChevronRight as ChevronR,
-  Zap, ListOrdered, Activity,
+  Zap, ListOrdered, Activity, Monitor, Layers,
 } from "lucide-react";
 import Image from "next/image";
 import { getPRDStatuses, savePRDStatuses, PRDStatus } from "./NewDocModal";
@@ -295,6 +295,8 @@ export default function AppSidebar() {
           <div className="mt-2 space-y-0.5" style={{ borderTop: "1px solid var(--border)", paddingTop: 8 }}>
             <ListManager storageKey="prd_project_types" label="Project Types" icon={Tag} collapsed={!sidebarOpen} itemColor="#b45309" />
             <ListManager storageKey="prd_sprints" label="Planned Sprints" icon={ListOrdered} collapsed={!sidebarOpen} itemColor="#6366f1" />
+            <ListManager storageKey="prd_platforms" label="Platforms" icon={Monitor} collapsed={!sidebarOpen} itemColor="#0ea5e9" />
+            <ListManager storageKey="prd_impacts" label="Impacts" icon={Layers} collapsed={!sidebarOpen} itemColor="#8b5cf6" />
             <StatusManager collapsed={!sidebarOpen} />
           </div>
         </nav>
