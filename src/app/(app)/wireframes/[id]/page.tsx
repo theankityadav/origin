@@ -338,6 +338,26 @@ export default function WireframeEditorPage() {
   const [activeShape, setActiveShape] = useState<ShapeDef | null>(null);
   const [visOpen, setVisOpen] = useState(false);
 
+  /* ── Undo / Redo history ── */
+  const history = useRef<WireframeElement[][]>([]);
+  const future = useRef<WireframeElement[][]>([]);
+
+  const pushHistory = useCallback((prev: WireframeElement[]) => {
+    history.current = [...history.current.slice(-49), prev];
+    future.current = [];
+  }, []);
+
+  const setElementsWithHistory = useCallback(
+    (updater: WireframeElement[] | ((prev: WireframeElement[]) => WireframeElement[])) => {
+      setElements(prev => {
+        const next = typeof updater === "function" ? updater(prev) : updater;
+        pushHistory(prev);
+        return next;
+      });
+    },
+    [pushHistory]
+  );
+
   const { data: doc, isLoading } = useQuery({
     queryKey: ["wireframe", id],
     queryFn: async () => { const { data } = await api.get(`/documents/${id}/`); return data; },
@@ -345,7 +365,11 @@ export default function WireframeEditorPage() {
   });
 
   useEffect(() => {
-    if (doc?.content?.elements) setElements(doc.content.elements);
+    if (doc?.content?.elements) {
+      setElements(doc.content.elements);
+      history.current = [];
+      future.current = [];
+    }
   }, [doc]);
 
   const save = useMutation({
@@ -368,14 +392,32 @@ export default function WireframeEditorPage() {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "Escape") setActiveShape(null);
       if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
-        setElements(prev => prev.filter(el => el.id !== selectedId));
+        setElementsWithHistory(prev => prev.filter(el => el.id !== selectedId));
         setSelectedId(null);
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save.mutate(); }
+      /* Undo: Ctrl+Z */
+      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        if (history.current.length === 0) return;
+        const prev = history.current[history.current.length - 1];
+        history.current = history.current.slice(0, -1);
+        setElements(cur => { future.current = [cur, ...future.current.slice(0, 49)]; return prev; });
+        setSelectedId(null);
+      }
+      /* Redo: Ctrl+Y or Ctrl+Shift+Z */
+      if ((e.metaKey || e.ctrlKey) && (e.key === "y" || (e.shiftKey && e.key === "z"))) {
+        e.preventDefault();
+        if (future.current.length === 0) return;
+        const next = future.current[0];
+        future.current = future.current.slice(1);
+        setElements(cur => { history.current = [...history.current.slice(-49), cur]; return next; });
+        setSelectedId(null);
+      }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [save, selectedId]);
+  }, [save, selectedId, setElementsWithHistory]);
 
   if (isLoading) return (
     <div className="flex items-center justify-center h-full">
@@ -459,7 +501,7 @@ export default function WireframeEditorPage() {
         {/* Canvas */}
         <WireframeCanvas
           elements={elements}
-          setElements={setElements}
+          setElements={setElementsWithHistory}
           selectedId={selectedId}
           setSelectedId={setSelectedId}
           activeShape={activeShape}
