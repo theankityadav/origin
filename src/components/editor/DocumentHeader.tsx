@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare, Share2, History, Lock, MoreHorizontal, Check, Loader2, Archive, Trash2, Star, Download, FileText, FileCode, Table2, SearchCheck, SearchX, FolderOpen, ChevronRight } from "lucide-react";
+import { MessageSquare, Share2, History, Lock, MoreHorizontal, Check, Loader2, Archive, Trash2, Star, Download, FileText, FileCode, Table2, SearchCheck, SearchX, FolderOpen, ChevronRight, FileDown } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import api from "@/lib/api";
@@ -81,6 +81,25 @@ export default function DocumentHeader({
       .catch(() => toast.error("Export failed"));
     setMenuOpen(false);
     setShowExport(false);
+  };
+
+  const handlePdfExport = () => {
+    const style = document.createElement("style");
+    style.id = "__pdf-print-style";
+    style.innerHTML = `
+      @media print {
+        body > *:not(#__pdf-print-root) { display: none !important; }
+        #__pdf-print-root { display: block !important; position: static !important; }
+        header, nav, aside, [data-sidebar], [data-topbar] { display: none !important; }
+        .sticky { position: static !important; }
+      }
+    `;
+    document.head.appendChild(style);
+    window.print();
+    document.head.removeChild(style);
+    setMenuOpen(false);
+    setShowExport(false);
+    toast.success("Print dialog opened — save as PDF");
   };
 
   const seoMutation = useMutation({
@@ -241,6 +260,14 @@ export default function DocumentHeader({
                       <Icon className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} /> {label}
                     </button>
                   ))}
+                  <button onClick={handlePdfExport}
+                    className="flex items-center gap-2 px-3 py-2 text-xs w-full transition-colors"
+                    style={{ color: "var(--text-2)" }}
+                    onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
+                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <FileDown className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} /> PDF (.pdf)
+                  </button>
                 </div>
               )}
 
