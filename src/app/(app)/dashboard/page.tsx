@@ -7,8 +7,8 @@ import Link from "next/link";
 import { timeAgo } from "@/lib/utils";
 import {
   FileText, Star, Share2,
-  HardDrive, Target, Plus, User,
-  MoreHorizontal, BarChart2, EyeOff, Trash2,
+  HardDrive, Target, User,
+  MoreHorizontal, BarChart2, EyeOff, Trash2, Plus,
 } from "lucide-react";
 import { getPRDStatuses } from "@/components/NewDocModal";
 import { useUIStore } from "@/store/ui.store";
@@ -130,7 +130,7 @@ function KanbanBoard({ prdDocs }: { prdDocs: any[] }) {
               style={{
                 background: isOver ? s.color + "18" : "var(--bg-panel)",
                 border: isOver ? `2px solid ${s.color}` : "1px solid var(--border)",
-                minHeight: 120,
+                minHeight: 480,
               }}
               onDragOver={e => { e.preventDefault(); setDragOverCol(s.value); }}
               onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverCol(null); }}
@@ -301,13 +301,6 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2 mb-3">
           <Target className="w-4 h-4 shrink-0" style={{ color: "var(--accent)" }} />
           <span className="font-semibold text-sm flex-1" style={{ color: "var(--text)" }}>Projects Board</span>
-          <button
-            onClick={() => setNewDocOpen(true)}
-            className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg"
-            style={{ background: "var(--accent)", color: "#fff" }}
-          >
-            <Plus className="w-3.5 h-3.5" /> New Project
-          </button>
         </div>
         <KanbanBoard prdDocs={prdDocs ?? []} />
       </div>

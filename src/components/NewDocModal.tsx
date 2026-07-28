@@ -331,7 +331,7 @@ function NewDocModalInner({ onClose, defaultStatus }: Omit<Props, "open">) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.6)" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden"
+      <div className="w-full max-w-xl rounded-2xl shadow-2xl"
         style={{ background: "var(--bg-panel)", border: "1px solid var(--border-strong)" }}>
 
         <div className="flex items-center gap-3 px-6 pt-5 pb-2">
