@@ -1,41 +1,149 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import api from "@/lib/api";
 import toast from "react-hot-toast";
 import {
-  ArrowLeft, Save, Loader2, MousePointer, Square, Circle,
-  Type, Minus, ArrowRight, Trash2, ZoomIn, ZoomOut, RotateCcw,
-  Lock, Users, Globe, ChevronDown, Check, Image as ImageIcon, StickyNote,
+  ArrowLeft, Save, Loader2, Trash2,
+  Lock, Users, Globe, ChevronDown, Check, ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 
 /* ── Types ── */
-type ElementType = "rect" | "circle" | "text" | "arrow" | "line" | "sticky" | "image-placeholder";
-type Tool = "select" | ElementType;
-
 interface WireframeElement {
   id: string;
-  type: ElementType;
-  x: number; y: number;
-  width: number; height: number;
-  text?: string;
+  shape: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   color?: string;
-  fontSize?: number;
-  rotate?: number;
+  fill?: string;
 }
 
-const TOOLS: { id: Tool; icon: React.ElementType; label: string }[] = [
-  { id: "select",            icon: MousePointer, label: "Select (V)" },
-  { id: "rect",              icon: Square,       label: "Rectangle (R)" },
-  { id: "circle",            icon: Circle,       label: "Ellipse (E)" },
-  { id: "text",              icon: Type,         label: "Text (T)" },
-  { id: "line",              icon: Minus,        label: "Line (L)" },
-  { id: "arrow",             icon: ArrowRight,   label: "Arrow (A)" },
-  { id: "sticky",            icon: StickyNote,   label: "Sticky Note (S)" },
-  { id: "image-placeholder", icon: ImageIcon,    label: "Image Box (I)" },
+/* ── Shape Library ── */
+interface ShapeDef {
+  id: string;
+  label: string;
+  defaultW: number;
+  defaultH: number;
+  render: (w: number, h: number, color: string, fill: string) => string; // SVG path/shape string
+}
+
+function uid() { return Math.random().toString(36).slice(2, 10); }
+
+const S = (id: string, label: string, dw: number, dh: number, render: ShapeDef["render"]): ShapeDef =>
+  ({ id, label, defaultW: dw, defaultH: dh, render });
+
+const SHAPE_CATEGORIES: { label: string; shapes: ShapeDef[] }[] = [
+  {
+    label: "Basic",
+    shapes: [
+      S("rect",        "Rectangle",      120, 60,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="2" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("rect-round",  "Rounded Rect",   120, 60,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="12" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("circle",      "Circle",         80,  80,  (w,h,c,f) => `<ellipse cx="${w/2}" cy="${h/2}" rx="${w/2-1}" ry="${h/2-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("ellipse",     "Ellipse",        120, 70,  (w,h,c,f) => `<ellipse cx="${w/2}" cy="${h/2}" rx="${w/2-1}" ry="${h/2-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("triangle",    "Triangle",       100, 80,  (w,h,c,f) => `<polygon points="${w/2},1 ${w-1},${h-1} 1,${h-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("diamond",     "Diamond",        100, 80,  (w,h,c,f) => `<polygon points="${w/2},1 ${w-1},${h/2} ${w/2},${h-1} 1,${h/2}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("parallelogram","Parallelogram", 120, 60,  (w,h,c,f) => `<polygon points="20,1 ${w-1},1 ${w-20},${h-1} 1,${h-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("trapezoid",   "Trapezoid",      120, 60,  (w,h,c,f) => `<polygon points="20,1 ${w-20},1 ${w-1},${h-1} 1,${h-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("pentagon",    "Pentagon",       90,  90,  (w,h,c,f) => { const cx=w/2,cy=h/2,r=Math.min(w,h)/2-2; const pts=Array.from({length:5},(_,i)=>{const a=(i*72-90)*Math.PI/180;return`${cx+r*Math.cos(a)},${cy+r*Math.sin(a)}`}).join(" "); return `<polygon points="${pts}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`; }),
+      S("hexagon",     "Hexagon",        100, 90,  (w,h,c,f) => { const cx=w/2,cy=h/2,r=Math.min(w,h)/2-2; const pts=Array.from({length:6},(_,i)=>{const a=(i*60-30)*Math.PI/180;return`${cx+r*Math.cos(a)},${cy+r*Math.sin(a)}`}).join(" "); return `<polygon points="${pts}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`; }),
+      S("star",        "Star",           90,  90,  (w,h,c,f) => { const cx=w/2,cy=h/2,R=Math.min(w,h)/2-2,r=R*0.4; const pts=Array.from({length:10},(_,i)=>{const a=(i*36-90)*Math.PI/180,rad=i%2===0?R:r;return`${cx+rad*Math.cos(a)},${cy+rad*Math.sin(a)}`}).join(" "); return `<polygon points="${pts}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`; }),
+      S("heart",       "Heart",          90,  80,  (w,h,c,f) => `<path d="M${w/2},${h*0.75} C${w*0.1},${h*0.5} 0,${h*0.2} ${w/4},${h*0.1} C${w*0.4},0 ${w/2},${h*0.15} ${w/2},${h*0.15} C${w/2},${h*0.15} ${w*0.6},0 ${w*0.75},${h*0.1} C${w},${h*0.2} ${w*0.9},${h*0.5} ${w/2},${h*0.75} Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("cross",       "Cross",          80,  80,  (w,h,c,f) => `<path d="M${w/3},0 H${w*2/3} V${h/3} H${w} V${h*2/3} H${w*2/3} V${h} H${w/3} V${h*2/3} H0 V${h/3} H${w/3} Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("cylinder",    "Cylinder",       80, 100,  (w,h,c,f) => `<ellipse cx="${w/2}" cy="12" rx="${w/2-1}" ry="10" fill="${f}" stroke="${c}" stroke-width="1.5"/><rect x="1" y="12" width="${w-2}" height="${h-22}" fill="${f}" stroke="${c}" stroke-width="0"/><line x1="1" y1="12" x2="1" y2="${h-10}" stroke="${c}" stroke-width="1.5"/><line x1="${w-1}" y1="12" x2="${w-1}" y2="${h-10}" stroke="${c}" stroke-width="1.5"/><ellipse cx="${w/2}" cy="${h-10}" rx="${w/2-1}" ry="10" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("cloud",       "Cloud",          120, 80,  (w,h,c,f) => `<path d="M${w*0.3},${h*0.7} C${w*0.05},${h*0.7} ${w*0.05},${h*0.35} ${w*0.25},${h*0.3} C${w*0.2},${h*0.05} ${w*0.55},${h*0.0} ${w*0.6},${h*0.2} C${w*0.65},${h*0.05} ${w*0.9},${h*0.05} ${w*0.9},${h*0.3} C${w*1.0},${h*0.3} ${w*1.0},${h*0.7} ${w*0.7},${h*0.7} Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("text",        "Text",           120, 40,  (w,h,c,_) => `<text x="${w/2}" y="${h/2+5}" text-anchor="middle" font-size="14" fill="${c}" font-family="Inter,sans-serif">Text</text>`),
+      S("sticky",      "Sticky Note",    120, 100, (w,h,_,__) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="3" fill="#fef08a" stroke="#ca8a04" stroke-width="1.5"/><text x="${w/2}" y="${h/2+5}" text-anchor="middle" font-size="12" fill="#713f12" font-family="Inter,sans-serif">Note</text>`),
+      S("image-box",   "Image Box",      120, 90,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="4" fill="${f}" stroke="${c}" stroke-width="1.5"/><line x1="1" y1="1" x2="${w-1}" y2="${h-1}" stroke="${c}" stroke-width="1" opacity="0.4"/><line x1="${w-1}" y1="1" x2="1" y2="${h-1}" stroke="${c}" stroke-width="1" opacity="0.4"/>`),
+    ],
+  },
+  {
+    label: "General",
+    shapes: [
+      S("process",     "Process",        120, 50,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="4" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("decision",    "Decision",       100, 70,  (w,h,c,f) => `<polygon points="${w/2},1 ${w-1},${h/2} ${w/2},${h-1} 1,${h/2}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("terminal",    "Terminal",       110, 50,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="${h/2}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("data",        "Data",           110, 55,  (w,h,c,f) => `<polygon points="15,1 ${w-1},1 ${w-15},${h-1} 1,${h-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("document",    "Document",       110, 60,  (w,h,c,f) => `<path d="M1,1 H${w-1} V${h*0.7} Q${w*0.75},${h*0.5} ${w/2},${h*0.7} Q${w*0.25},${h*0.9} 1,${h*0.7} Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("multi-doc",   "Multi-Document", 120, 65,  (w,h,c,f) => `<rect x="10" y="1" width="${w-12}" height="${h-15}" rx="2" fill="${f}" stroke="${c}" stroke-width="1"/><path d="M1,10 H${w-12} V${h-5} Q${(w-12)*0.75},${h-18} ${(w-12)/2},${h-5} Q${(w-12)*0.25},${h+8} 1,${h-5} Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("database",    "Database",       80, 100,  (w,h,c,f) => `<ellipse cx="${w/2}" cy="14" rx="${w/2-1}" ry="12" fill="${f}" stroke="${c}" stroke-width="1.5"/><rect x="1" y="14" width="${w-2}" height="${h-28}" fill="${f}" stroke="${c}" stroke-width="0"/><line x1="1" y1="14" x2="1" y2="${h-14}" stroke="${c}" stroke-width="1.5"/><line x1="${w-1}" y1="14" x2="${w-1}" y2="${h-14}" stroke="${c}" stroke-width="1.5"/><ellipse cx="${w/2}" cy="${h-14}" rx="${w/2-1}" ry="12" fill="${f}" stroke="${c}" stroke-width="1.5"/><ellipse cx="${w/2}" cy="${h/2}" rx="${w/2-1}" ry="12" fill="none" stroke="${c}" stroke-width="1" stroke-dasharray="3,3"/>`),
+      S("callout",     "Callout",        120, 80,  (w,h,c,f) => `<path d="M1,1 H${w-1} V${h*0.65} H${w/2+10} L${w/2-10},${h-1} L${w/2},${h*0.65} H1 Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("note",        "Note",           100, 80,  (w,h,c,f) => `<path d="M1,1 H${w-15} L${w-1},15 V${h-1} H1 Z" fill="${f}" stroke="${c}" stroke-width="1.5"/><line x1="${w-15}" y1="1" x2="${w-15}" y2="15" stroke="${c}" stroke-width="1"/><line x1="${w-15}" y1="15" x2="${w-1}" y2="15" stroke="${c}" stroke-width="1"/>`),
+      S("actor",       "Actor",          60, 100,  (w,h,c,f) => `<circle cx="${w/2}" cy="12" r="10" fill="${f}" stroke="${c}" stroke-width="1.5"/><line x1="${w/2}" y1="22" x2="${w/2}" y2="${h*0.6}" stroke="${c}" stroke-width="1.5"/><line x1="2" y1="${h*0.35}" x2="${w-2}" y2="${h*0.35}" stroke="${c}" stroke-width="1.5"/><line x1="${w/2}" y1="${h*0.6}" x2="5" y2="${h-1}" stroke="${c}" stroke-width="1.5"/><line x1="${w/2}" y1="${h*0.6}" x2="${w-5}" y2="${h-1}" stroke="${c}" stroke-width="1.5"/>`),
+      S("or-gate",     "OR Gate",        80, 60,   (w,h,c,f) => `<path d="M1,1 Q${w/2},1 ${w-1},${h/2} Q${w/2},${h-1} 1,${h-1} Q${w/3},${h/2} 1,1 Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("and-gate",    "AND Gate",       80, 60,   (w,h,c,f) => `<path d="M1,1 H${w/2} Q${w-1},1 ${w-1},${h/2} Q${w-1},${h-1} ${w/2},${h-1} H1 Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("xor-gate",    "XOR Gate",       90, 60,   (w,h,c,f) => `<path d="M10,1 Q${w/2},1 ${w-1},${h/2} Q${w/2},${h-1} 10,${h-1} Q${w/3+5},${h/2} 10,1 Z" fill="${f}" stroke="${c}" stroke-width="1.5"/><path d="M1,1 Q${w/3-5},${h/2} 1,${h-1}" fill="none" stroke="${c}" stroke-width="1.5"/>`),
+      S("storage",     "Storage",        100, 60,  (w,h,c,f) => `<path d="M12,1 H${w-12} Q${w-1},1 ${w-1},${h/2} Q${w-1},${h-1} ${w-12},${h-1} H12 Q1,${h-1} 1,${h/2} Q1,1 12,1 Z" fill="${f}" stroke="${c}" stroke-width="1.5"/><ellipse cx="${w-12}" cy="${h/2}" rx="12" ry="${h/2-1}" fill="none" stroke="${c}" stroke-width="1" stroke-dasharray="2,2"/>`),
+    ],
+  },
+  {
+    label: "Advanced",
+    shapes: [
+      S("swimlane-h",  "Swimlane H",     200, 100, (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="1.5"/><line x1="1" y1="25" x2="${w-1}" y2="25" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="17" text-anchor="middle" font-size="11" fill="${c}" font-family="Inter,sans-serif">Lane Title</text>`),
+      S("swimlane-v",  "Swimlane V",     100, 200, (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="1.5"/><line x1="25" y1="1" x2="25" y2="${h-1}" stroke="${c}" stroke-width="1.5"/><text x="13" y="${h/2}" text-anchor="middle" font-size="10" fill="${c}" transform="rotate(-90,13,${h/2})" font-family="Inter,sans-serif">Lane</text>`),
+      S("table",       "Table",          160, 120, (w,h,c,f) => { const rows=4,cols=3,cw=w/cols,rh=h/rows; return `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="1.5"/>${Array.from({length:rows-1},(_,i)=>`<line x1="1" y1="${(i+1)*rh}" x2="${w-1}" y2="${(i+1)*rh}" stroke="${c}" stroke-width="1"/>`).join("")}${Array.from({length:cols-1},(_,i)=>`<line x1="${(i+1)*cw}" y1="1" x2="${(i+1)*cw}" y2="${h-1}" stroke="${c}" stroke-width="1"/>`).join("")}<rect x="1" y="1" width="${w-2}" height="${rh}" fill="${c}" fill-opacity="0.15" stroke="none"/>`; }),
+      S("list-item",   "List Item",      160, 40,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="2" fill="${f}" stroke="${c}" stroke-width="1.5"/><circle cx="16" cy="${h/2}" r="4" fill="${c}" fill-opacity="0.4" stroke="none"/><line x1="28" y1="${h/2}" x2="${w-10}" y2="${h/2}" stroke="${c}" stroke-width="1" opacity="0.5"/>`),
+      S("input-field", "Input Field",    160, 36,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="4" fill="${f}" stroke="${c}" stroke-width="1.5"/><text x="10" y="${h/2+4}" font-size="11" fill="${c}" fill-opacity="0.45" font-family="Inter,sans-serif">Placeholder...</text>`),
+      S("button",      "Button",         100, 36,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="6" fill="${c}" fill-opacity="0.2" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="${h/2+4}" text-anchor="middle" font-size="12" fill="${c}" font-weight="600" font-family="Inter,sans-serif">Button</text>`),
+      S("checkbox",    "Checkbox",       120, 30,  (w,h,c,f) => `<rect x="1" y="${h/2-8}" width="16" height="16" rx="3" fill="${f}" stroke="${c}" stroke-width="1.5"/><polyline points="4,${h/2} 8,${h/2+4} 14,${h/2-4}" fill="none" stroke="${c}" stroke-width="1.5"/><line x1="24" y1="${h/2}" x2="${w-8}" y2="${h/2}" stroke="${c}" stroke-width="1" opacity="0.5"/>`),
+      S("radio",       "Radio Button",   120, 30,  (w,h,c,f) => `<circle cx="9" cy="${h/2}" r="8" fill="${f}" stroke="${c}" stroke-width="1.5"/><circle cx="9" cy="${h/2}" r="4" fill="${c}" fill-opacity="0.6"/><line x1="24" y1="${h/2}" x2="${w-8}" y2="${h/2}" stroke="${c}" stroke-width="1" opacity="0.5"/>`),
+      S("toggle",      "Toggle",         70, 30,   (w,h,c,f) => `<rect x="1" y="${h/2-10}" width="${w-2}" height="20" rx="10" fill="${c}" fill-opacity="0.2" stroke="${c}" stroke-width="1.5"/><circle cx="${w-12}" cy="${h/2}" r="8" fill="${c}" fill-opacity="0.7"/>`),
+      S("dropdown",    "Dropdown",       140, 36,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="4" fill="${f}" stroke="${c}" stroke-width="1.5"/><text x="10" y="${h/2+4}" font-size="11" fill="${c}" font-family="Inter,sans-serif">Select...</text><polyline points="${w-18},${h/2-3} ${w-12},${h/2+3} ${w-6},${h/2-3}" fill="none" stroke="${c}" stroke-width="1.5"/><line x1="${w-24}" y1="1" x2="${w-24}" y2="${h-1}" stroke="${c}" stroke-width="1" opacity="0.3"/>`),
+      S("progress",    "Progress Bar",   160, 24,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="${h/2}" fill="${f}" stroke="${c}" stroke-width="1.5"/><rect x="2" y="2" width="${(w-4)*0.6}" height="${h-4}" rx="${h/2-1}" fill="${c}" fill-opacity="0.4" stroke="none"/>`),
+      S("slider",      "Slider",         160, 24,  (w,h,c,f) => `<line x1="8" y1="${h/2}" x2="${w-8}" y2="${h/2}" stroke="${c}" stroke-width="2" opacity="0.4"/><line x1="8" y1="${h/2}" x2="${w*0.6}" y2="${h/2}" stroke="${c}" stroke-width="3"/><circle cx="${w*0.6}" cy="${h/2}" r="8" fill="${f}" stroke="${c}" stroke-width="2"/>`),
+      S("browser",     "Browser",        180, 120, (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="6" fill="${f}" stroke="${c}" stroke-width="1.5"/><rect x="1" y="1" width="${w-2}" height="28" rx="6" fill="${c}" fill-opacity="0.1" stroke="${c}" stroke-width="1.5"/><rect x="1" y="14" width="${w-2}" height="15" fill="${c}" fill-opacity="0.05" stroke="none"/><circle cx="18" cy="14" r="5" fill="${c}" fill-opacity="0.3"/><circle cx="32" cy="14" r="5" fill="${c}" fill-opacity="0.3"/><circle cx="46" cy="14" r="5" fill="${c}" fill-opacity="0.3"/><rect x="60" y="9" width="${w-70}" height="10" rx="5" fill="${f}" stroke="${c}" stroke-width="1"/>`),
+      S("mobile",      "Mobile Frame",   80, 140,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="14" fill="${f}" stroke="${c}" stroke-width="1.5"/><rect x="8" y="8" width="${w-16}" height="${h-16}" rx="8" fill="${c}" fill-opacity="0.05" stroke="${c}" stroke-width="1"/><circle cx="${w/2}" cy="${h-12}" r="6" fill="none" stroke="${c}" stroke-width="1.5"/>`),
+      S("navbar",      "Navbar",         200, 44,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="1.5"/><rect x="12" y="${h/2-8}" width="30" height="16" rx="2" fill="${c}" fill-opacity="0.2" stroke="none"/><line x1="${w-60}" y1="${h/2}" x2="${w-40}" y2="${h/2}" stroke="${c}" stroke-width="1.5" opacity="0.5"/><line x1="${w-32}" y1="${h/2}" x2="${w-16}" y2="${h/2}" stroke="${c}" stroke-width="1.5" opacity="0.5"/>`),
+    ],
+  },
+  {
+    label: "Arrows",
+    shapes: [
+      S("arrow-r",     "Arrow Right",    100, 30,  (w,h,c,_) => `<line x1="1" y1="${h/2}" x2="${w-12}" y2="${h/2}" stroke="${c}" stroke-width="1.5"/><polygon points="${w-1},${h/2} ${w-12},${h/2-6} ${w-12},${h/2+6}" fill="${c}"/>`),
+      S("arrow-l",     "Arrow Left",     100, 30,  (w,h,c,_) => `<line x1="12" y1="${h/2}" x2="${w-1}" y2="${h/2}" stroke="${c}" stroke-width="1.5"/><polygon points="1,${h/2} 12,${h/2-6} 12,${h/2+6}" fill="${c}"/>`),
+      S("arrow-both",  "Arrow Both",     100, 30,  (w,h,c,_) => `<line x1="12" y1="${h/2}" x2="${w-12}" y2="${h/2}" stroke="${c}" stroke-width="1.5"/><polygon points="1,${h/2} 12,${h/2-6} 12,${h/2+6}" fill="${c}"/><polygon points="${w-1},${h/2} ${w-12},${h/2-6} ${w-12},${h/2+6}" fill="${c}"/>`),
+      S("arrow-up",    "Arrow Up",       30, 100,  (w,h,c,_) => `<line x1="${w/2}" y1="12" x2="${w/2}" y2="${h-1}" stroke="${c}" stroke-width="1.5"/><polygon points="${w/2},1 ${w/2-6},12 ${w/2+6},12" fill="${c}"/>`),
+      S("arrow-down",  "Arrow Down",     30, 100,  (w,h,c,_) => `<line x1="${w/2}" y1="1" x2="${w/2}" y2="${h-12}" stroke="${c}" stroke-width="1.5"/><polygon points="${w/2},${h-1} ${w/2-6},${h-12} ${w/2+6},${h-12}" fill="${c}"/>`),
+      S("arrow-curved","Curved Arrow",   100, 60,  (w,h,c,_) => `<path d="M1,${h-1} Q${w/2},1 ${w-1},${h-1}" fill="none" stroke="${c}" stroke-width="1.5"/><polygon points="${w-1},${h-1} ${w-12},${h-12} ${w-4},${h-14}" fill="${c}"/>`),
+      S("dbl-arrow",   "Dbl Arrow",      100, 50,  (w,h,c,_) => `<polygon points="1,${h/2} 20,1 20,${h/2-6} ${w-20},${h/2-6} ${w-20},1 ${w-1},${h/2} ${w-20},${h-1} ${w-20},${h/2+6} 20,${h/2+6} 20,${h-1}" fill="${c}" fill-opacity="0.3" stroke="${c}" stroke-width="1.5"/>`),
+      S("line",        "Line",           100, 4,   (w,h,c,_) => `<line x1="1" y1="${h/2}" x2="${w-1}" y2="${h/2}" stroke="${c}" stroke-width="1.5"/>`),
+      S("dashed-line", "Dashed Line",    100, 4,   (w,h,c,_) => `<line x1="1" y1="${h/2}" x2="${w-1}" y2="${h/2}" stroke="${c}" stroke-width="1.5" stroke-dasharray="6,4"/>`),
+    ],
+  },
+  {
+    label: "Flowchart",
+    shapes: [
+      S("fc-start",    "Start/End",      110, 50,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="${h/2}" fill="${f}" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="${h/2+4}" text-anchor="middle" font-size="11" fill="${c}" font-family="Inter,sans-serif">Start</text>`),
+      S("fc-process",  "Process",        120, 50,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="${h/2+4}" text-anchor="middle" font-size="11" fill="${c}" font-family="Inter,sans-serif">Process</text>`),
+      S("fc-decision", "Decision",       110, 70,  (w,h,c,f) => `<polygon points="${w/2},1 ${w-1},${h/2} ${w/2},${h-1} 1,${h/2}" fill="${f}" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="${h/2+4}" text-anchor="middle" font-size="10" fill="${c}" font-family="Inter,sans-serif">Decision</text>`),
+      S("fc-io",       "Input/Output",   120, 50,  (w,h,c,f) => `<polygon points="15,1 ${w-1},1 ${w-15},${h-1} 1,${h-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="${h/2+4}" text-anchor="middle" font-size="11" fill="${c}" font-family="Inter,sans-serif">I/O</text>`),
+      S("fc-doc",      "Document",       120, 60,  (w,h,c,f) => `<path d="M1,1 H${w-1} V${h*0.68} Q${w*0.75},${h*0.48} ${w/2},${h*0.68} Q${w*0.25},${h*0.88} 1,${h*0.68} Z" fill="${f}" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="${h*0.36}" text-anchor="middle" font-size="11" fill="${c}" font-family="Inter,sans-serif">Doc</text>`),
+      S("fc-db",       "Database",       80, 90,   (w,h,c,f) => `<ellipse cx="${w/2}" cy="14" rx="${w/2-1}" ry="12" fill="${f}" stroke="${c}" stroke-width="1.5"/><rect x="1" y="14" width="${w-2}" height="${h-28}" fill="${f}" stroke="${c}" stroke-width="0"/><line x1="1" y1="14" x2="1" y2="${h-14}" stroke="${c}" stroke-width="1.5"/><line x1="${w-1}" y1="14" x2="${w-1}" y2="${h-14}" stroke="${c}" stroke-width="1.5"/><ellipse cx="${w/2}" cy="${h-14}" rx="${w/2-1}" ry="12" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("fc-manual",   "Manual Op",      120, 55,  (w,h,c,f) => `<polygon points="1,1 ${w-1},1 ${w-15},${h-1} 15,${h-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("fc-prep",     "Preparation",    120, 55,  (w,h,c,f) => `<polygon points="20,1 ${w-20},1 ${w-1},${h/2} ${w-20},${h-1} 20,${h-1} 1,${h/2}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+      S("fc-delay",    "Delay",          110, 50,  (w,h,c,f) => { const r=h/2; return `<path d="M1,1 H${w-r} Q${w-1},1 ${w-1},${h/2} Q${w-1},${h-1} ${w-r},${h-1} H1 Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`; }),
+      S("fc-conn",     "Connector",      50,  50,  (w,h,c,f) => `<circle cx="${w/2}" cy="${h/2}" r="${Math.min(w,h)/2-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
+    ],
+  },
+  {
+    label: "Entity Relation",
+    shapes: [
+      S("er-entity",   "Entity",         140, 60,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="2"/><text x="${w/2}" y="${h/2+4}" text-anchor="middle" font-size="12" fill="${c}" font-weight="600" font-family="Inter,sans-serif">Entity</text>`),
+      S("er-weak",     "Weak Entity",    140, 60,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="2"/><rect x="5" y="5" width="${w-10}" height="${h-10}" fill="none" stroke="${c}" stroke-width="1"/><text x="${w/2}" y="${h/2+4}" text-anchor="middle" font-size="12" fill="${c}" font-family="Inter,sans-serif">Weak Entity</text>`),
+      S("er-attr",     "Attribute",      110, 50,  (w,h,c,f) => `<ellipse cx="${w/2}" cy="${h/2}" rx="${w/2-1}" ry="${h/2-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="${h/2+4}" text-anchor="middle" font-size="11" fill="${c}" font-family="Inter,sans-serif">Attribute</text>`),
+      S("er-key-attr", "Key Attribute",  110, 50,  (w,h,c,f) => `<ellipse cx="${w/2}" cy="${h/2}" rx="${w/2-1}" ry="${h/2-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="${h/2+4}" text-anchor="middle" font-size="11" fill="${c}" font-decoration="underline" font-family="Inter,sans-serif">Key Attr</text>`),
+      S("er-relation", "Relationship",   100, 70,  (w,h,c,f) => `<polygon points="${w/2},1 ${w-1},${h/2} ${w/2},${h-1} 1,${h/2}" fill="${f}" stroke="${c}" stroke-width="2"/><text x="${w/2}" y="${h/2+4}" text-anchor="middle" font-size="10" fill="${c}" font-family="Inter,sans-serif">Relation</text>`),
+      S("er-weak-rel", "Weak Relation",  100, 70,  (w,h,c,f) => `<polygon points="${w/2},1 ${w-1},${h/2} ${w/2},${h-1} 1,${h/2}" fill="${f}" stroke="${c}" stroke-width="2"/><polygon points="${w/2},8 ${w-9},${h/2} ${w/2},${h-8} 9,${h/2}" fill="none" stroke="${c}" stroke-width="1"/>`),
+      S("er-line",     "ER Line",        100, 4,   (w,h,c,_) => `<line x1="1" y1="${h/2}" x2="${w-1}" y2="${h/2}" stroke="${c}" stroke-width="1.5"/><line x1="${w-1}" y1="1" x2="${w-1}" y2="${h-1}" stroke="${c}" stroke-width="1.5"/>`),
+      S("er-one",      "One",            80,  50,  (w,h,c,_) => `<line x1="${w/2}" y1="1" x2="${w/2}" y2="${h-1}" stroke="${c}" stroke-width="1.5"/><line x1="1" y1="${h/2}" x2="${w-1}" y2="${h/2}" stroke="${c}" stroke-width="1.5"/><text x="${w/2-16}" y="${h/2+4}" font-size="10" fill="${c}" font-family="Inter,sans-serif">1</text>`),
+      S("er-many",     "Many",           80,  50,  (w,h,c,_) => `<line x1="1" y1="${h/2}" x2="${w-1}" y2="${h/2}" stroke="${c}" stroke-width="1.5"/><line x1="${w*0.7}" y1="1" x2="${w-1}" y2="${h/2}" stroke="${c}" stroke-width="1.5"/><line x1="${w*0.7}" y1="${h-1}" x2="${w-1}" y2="${h/2}" stroke="${c}" stroke-width="1.5"/>`),
+      S("er-table",    "ER Table",       160, 120, (w,h,c,f) => { const rh=22; return `<rect x="1" y="1" width="${w-2}" height="${rh}" fill="${c}" fill-opacity="0.25" stroke="${c}" stroke-width="2"/><rect x="1" y="${rh}" width="${w-2}" height="${h-rh-1}" fill="${f}" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="15" text-anchor="middle" font-size="11" fill="${c}" font-weight="700" font-family="Inter,sans-serif">TableName</text>${Array.from({length:3},(_,i)=>`<text x="10" y="${rh+(i+1)*22-6}" font-size="10" fill="${c}" font-family="Inter,sans-serif">field_${i+1}</text><line x1="1" y1="${rh+(i+1)*22}" x2="${w-1}" y2="${rh+(i+1)*22}" stroke="${c}" stroke-width="0.5" opacity="0.5"/>`).join("")}`; }),
+    ],
+  },
 ];
 
 const VISIBILITY_OPTIONS = [
@@ -45,224 +153,171 @@ const VISIBILITY_OPTIONS = [
   { value: "public",  label: "Public",  icon: Globe },
 ];
 
-const PERMISSION_LEVELS = [
-  { value: "viewer",      label: "Can View" },
-  { value: "commenter",   label: "Can Comment" },
-  { value: "editor",      label: "Can Edit" },
-  { value: "full_access", label: "Full Access" },
-];
-
-function uid() { return Math.random().toString(36).slice(2, 10); }
-
-function drawElement(ctx: CanvasRenderingContext2D, el: WireframeElement, selected: boolean) {
-  ctx.save();
-  ctx.translate(el.x + el.width / 2, el.y + el.height / 2);
-  if (el.rotate) ctx.rotate((el.rotate * Math.PI) / 180);
-  ctx.translate(-(el.width / 2), -(el.height / 2));
-
-  const color = el.color ?? "#6366f1";
-  ctx.strokeStyle = selected ? "#f59e0b" : color;
-  ctx.lineWidth = selected ? 2.5 : 1.5;
-  ctx.fillStyle = color + "18";
-
-  if (el.type === "rect" || el.type === "image-placeholder") {
-    ctx.beginPath();
-    ctx.roundRect(0, 0, el.width, el.height, 6);
-    ctx.fill(); ctx.stroke();
-    if (el.type === "image-placeholder") {
-      ctx.strokeStyle = color + "80";
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(el.width, el.height); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(el.width, 0); ctx.lineTo(0, el.height); ctx.stroke();
-    }
-  } else if (el.type === "circle") {
-    ctx.beginPath();
-    ctx.ellipse(el.width / 2, el.height / 2, el.width / 2, el.height / 2, 0, 0, Math.PI * 2);
-    ctx.fill(); ctx.stroke();
-  } else if (el.type === "line") {
-    ctx.beginPath(); ctx.moveTo(0, el.height / 2); ctx.lineTo(el.width, el.height / 2); ctx.stroke();
-  } else if (el.type === "arrow") {
-    const hw = 10, hl = 14;
-    ctx.beginPath(); ctx.moveTo(0, el.height / 2); ctx.lineTo(el.width - hl, el.height / 2); ctx.stroke();
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(el.width, el.height / 2);
-    ctx.lineTo(el.width - hl, el.height / 2 - hw / 2);
-    ctx.lineTo(el.width - hl, el.height / 2 + hw / 2);
-    ctx.closePath(); ctx.fill();
-  } else if (el.type === "sticky") {
-    ctx.fillStyle = "#fef08a";
-    ctx.beginPath(); ctx.roundRect(0, 0, el.width, el.height, 4); ctx.fill();
-    ctx.strokeStyle = "#ca8a04"; ctx.lineWidth = 1.5; ctx.stroke();
-  } else if (el.type === "text") {
-    ctx.fillStyle = color;
-  }
-
-  if (el.text || el.type === "text") {
-    ctx.fillStyle = el.type === "sticky" ? "#713f12" : color;
-    ctx.font = `${el.fontSize ?? 14}px Inter, sans-serif`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    const lines = (el.text || "Text").split("\n");
-    const lineH = (el.fontSize ?? 14) * 1.4;
-    lines.forEach((line, i) => {
-      ctx.fillText(line, el.width / 2, el.height / 2 + (i - (lines.length - 1) / 2) * lineH, el.width - 8);
-    });
-  }
-
-  if (selected) {
-    ctx.strokeStyle = "#f59e0b";
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 3]);
-    ctx.beginPath(); ctx.roundRect(-4, -4, el.width + 8, el.height + 8, 4); ctx.stroke();
-    ctx.setLineDash([]);
-    [[0, 0], [el.width / 2, 0], [el.width, 0],
-     [0, el.height / 2], [el.width, el.height / 2],
-     [0, el.height], [el.width / 2, el.height], [el.width, el.height]
-    ].forEach(([hx, hy]) => {
-      ctx.fillStyle = "#fff"; ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(hx, hy, 4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    });
-  }
-  ctx.restore();
+/* ── Shape Panel ── */
+function ShapesPanel({ onSelect, activeShapeId }: { onSelect: (s: ShapeDef) => void; activeShapeId: string | null }) {
+  const [open, setOpen] = useState<Record<string, boolean>>({ Basic: true });
+  return (
+    <div className="w-52 shrink-0 overflow-y-auto flex flex-col"
+      style={{ background: "var(--bg-panel)", borderRight: "1px solid var(--border)" }}>
+      <div className="px-3 py-2 text-[10px] font-bold tracking-widest"
+        style={{ color: "var(--text-3)", borderBottom: "1px solid var(--border)" }}>SHAPES</div>
+      {SHAPE_CATEGORIES.map(cat => (
+        <div key={cat.label}>
+          <button onClick={() => setOpen(o => ({ ...o, [cat.label]: !o[cat.label] }))}
+            className="w-full flex items-center justify-between px-3 py-1.5 text-xs font-semibold"
+            style={{ color: "var(--text-2)", background: "var(--bg-subtle)", borderBottom: "1px solid var(--border)" }}>
+            {cat.label}
+            {open[cat.label] ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </button>
+          {open[cat.label] && (
+            <div className="grid grid-cols-3 gap-1 p-1.5">
+              {cat.shapes.map(shape => {
+                const isActive = activeShapeId === shape.id;
+                const pw = 48, ph = 32;
+                const scale = Math.min(pw / shape.defaultW, ph / shape.defaultH, 1);
+                const sw = shape.defaultW * scale || pw;
+                const sh = shape.defaultH * scale || ph;
+                return (
+                  <button key={shape.id} title={shape.label} onClick={() => onSelect(shape)}
+                    className="flex flex-col items-center gap-0.5 p-1 rounded-lg transition-all"
+                    style={{
+                      border: isActive ? "1.5px solid var(--accent)" : "1px solid var(--border)",
+                      background: isActive ? "var(--accent-bg)" : "transparent",
+                    }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
+                    <svg width={pw} height={ph} viewBox={`0 0 ${sw} ${sh}`}
+                      dangerouslySetInnerHTML={{ __html: shape.render(sw, sh, "#6366f1", "transparent") }} />
+                    <span className="text-[8px] truncate w-full text-center leading-tight"
+                      style={{ color: "var(--text-3)" }}>{shape.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 }
 
-/* ── Canvas component ── */
+/* ── SVG Canvas ── */
 function WireframeCanvas({
-  elements, setElements, tool, zoom,
+  elements, setElements, selectedId, setSelectedId, activeShape, onPlaced,
 }: {
   elements: WireframeElement[];
   setElements: React.Dispatch<React.SetStateAction<WireframeElement[]>>;
-  tool: Tool;
-  zoom: number;
+  selectedId: string | null;
+  setSelectedId: (id: string | null) => void;
+  activeShape: ShapeDef | null;
+  onPlaced: () => void;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dragging, setDragging] = useState<{ id: string; ox: number; oy: number } | null>(null);
-  const [drawing, setDrawing] = useState<{ startX: number; startY: number } | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState("");
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [drag, setDrag] = useState<{ id: string; ox: number; oy: number } | null>(null);
+  const [resizeState, setResizeState] = useState<{ id: string; sw: number; sh: number; mx: number; my: number } | null>(null);
 
-  const redraw = useCallback(() => {
-    const canvas = canvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext("2d"); if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.save(); ctx.scale(zoom, zoom);
-    // Grid
-    ctx.strokeStyle = "rgba(128,128,128,0.1)"; ctx.lineWidth = 0.5;
-    for (let x = 0; x < canvas.width / zoom; x += 20) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height / zoom); ctx.stroke(); }
-    for (let y = 0; y < canvas.height / zoom; y += 20) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width / zoom, y); ctx.stroke(); }
-    elements.forEach(el => drawElement(ctx, el, el.id === selectedId));
-    ctx.restore();
-  }, [elements, selectedId, zoom]);
+  const toSVG = useCallback((e: React.MouseEvent) => {
+    const r = svgRef.current!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }, []);
 
-  useEffect(() => { redraw(); }, [redraw]);
-
-  const toCanvas = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    return { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };
-  };
-
-  const hitTest = (x: number, y: number) =>
-    [...elements].reverse().find(el => x >= el.x && x <= el.x + el.width && y >= el.y && y <= el.y + el.height);
-
-  const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const { x, y } = toCanvas(e);
-    if (tool === "select") {
-      const hit = hitTest(x, y);
-      setSelectedId(hit?.id ?? null);
-      if (hit) setDragging({ id: hit.id, ox: x - hit.x, oy: y - hit.y });
-    } else {
-      setDrawing({ startX: x, startY: y });
-    }
-  };
-
-  const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const { x, y } = toCanvas(e);
-    if (dragging) {
-      setElements(prev => prev.map(el => el.id === dragging.id ? { ...el, x: x - dragging.ox, y: y - dragging.oy } : el));
-    }
-  };
-
-  const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const { x, y } = toCanvas(e);
-    if (drawing) {
-      const w = Math.abs(x - drawing.startX), h = Math.abs(y - drawing.startY);
-      const newEl: WireframeElement = {
-        id: uid(), type: tool as ElementType,
-        x: Math.min(x, drawing.startX), y: Math.min(y, drawing.startY),
-        width: Math.max(w, 80), height: Math.max(h, tool === "line" || tool === "arrow" ? 20 : 50),
-        text: tool === "text" ? "Text" : tool === "sticky" ? "Note" : undefined,
-        color: tool === "sticky" ? "#ca8a04" : "#6366f1",
+  const onCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    const tag = (e.target as SVGElement).tagName;
+    if (tag === "svg" || tag === "circle") setSelectedId(null);
+    if (activeShape) {
+      const { x, y } = toSVG(e);
+      const el: WireframeElement = {
+        id: uid(), shape: activeShape.id,
+        x: x - activeShape.defaultW / 2, y: y - activeShape.defaultH / 2,
+        width: activeShape.defaultW, height: activeShape.defaultH,
+        color: "#6366f1", fill: "transparent",
       };
-      setElements(prev => [...prev, newEl]);
-      setSelectedId(newEl.id);
-      setDrawing(null);
-    }
-    setDragging(null);
-  };
-
-  const onDblClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const { x, y } = toCanvas(e);
-    const hit = hitTest(x, y);
-    if (hit && (hit.type === "text" || hit.type === "sticky" || hit.type === "rect")) {
-      setEditingId(hit.id); setEditText(hit.text ?? "");
+      setElements(prev => [...prev, el]);
+      setSelectedId(el.id);
+      onPlaced();
     }
   };
 
+  const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const { x, y } = toSVG(e);
+    if (drag) setElements(prev => prev.map(el => el.id === drag.id ? { ...el, x: x - drag.ox, y: y - drag.oy } : el));
+    if (resizeState) setElements(prev => prev.map(el => el.id === resizeState.id
+      ? { ...el, width: Math.max(20, resizeState.sw + x - resizeState.mx), height: Math.max(10, resizeState.sh + y - resizeState.my) }
+      : el));
+  };
+
+  const allShapes = SHAPE_CATEGORIES.flatMap(c => c.shapes);
   const selected = elements.find(el => el.id === selectedId);
 
   return (
-    <div className="relative flex-1 overflow-hidden">
-      <canvas ref={canvasRef} width={1600} height={900}
-        className="w-full h-full"
-        style={{ cursor: tool === "select" ? "default" : "crosshair", background: "var(--bg)" }}
-        onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onDoubleClick={onDblClick}
-      />
-      {/* Inline text editor */}
-      {editingId && (() => {
-        const el = elements.find(e => e.id === editingId)!;
-        return (
-          <textarea
-            autoFocus
-            value={editText}
-            onChange={e => setEditText(e.target.value)}
-            onBlur={() => {
-              setElements(prev => prev.map(e => e.id === editingId ? { ...e, text: editText } : e));
-              setEditingId(null);
-            }}
-            style={{
-              position: "absolute",
-              left: el.x * zoom, top: el.y * zoom,
-              width: el.width * zoom, height: el.height * zoom,
-              background: "transparent", border: "2px solid #f59e0b",
-              color: "var(--text)", fontSize: (el.fontSize ?? 14) * zoom,
-              textAlign: "center", resize: "none", outline: "none", padding: 4,
-            }}
-          />
-        );
-      })()}
-      {/* Properties panel */}
+    <div className="relative flex-1 overflow-auto" style={{ background: "var(--bg)" }}>
+      <svg ref={svgRef} width="3000" height="2000"
+        style={{ display: "block", cursor: activeShape ? "crosshair" : "default" }}
+        onClick={onCanvasClick}
+        onMouseMove={onMouseMove}
+        onMouseUp={() => { setDrag(null); setResizeState(null); }}
+        onMouseLeave={() => { setDrag(null); setResizeState(null); }}>
+        <defs>
+          <pattern id="dotgrid" width="20" height="20" patternUnits="userSpaceOnUse">
+            <circle cx="1" cy="1" r="0.6" fill="rgba(128,128,128,0.2)" />
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#dotgrid)" />
+        {elements.map(el => {
+          const def = allShapes.find(s => s.id === el.shape);
+          if (!def) return null;
+          const color = el.color ?? "#6366f1";
+          const fill = el.fill ?? "transparent";
+          const isSel = el.id === selectedId;
+          return (
+            <g key={el.id} transform={`translate(${el.x},${el.y})`}
+              style={{ cursor: drag?.id === el.id ? "grabbing" : "grab" }}
+              onMouseDown={ev => { ev.stopPropagation(); const { x, y } = toSVG(ev); setDrag({ id: el.id, ox: x - el.x, oy: y - el.y }); setSelectedId(el.id); }}
+              onClick={ev => { ev.stopPropagation(); setSelectedId(el.id); }}>
+              <svg width={el.width} height={el.height} overflow="visible"
+                dangerouslySetInnerHTML={{ __html: def.render(el.width, el.height, color, fill) }} />
+              {isSel && (
+                <>
+                  <rect x="-4" y="-4" width={el.width + 8} height={el.height + 8}
+                    fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 3" rx="3" />
+                  <rect x={el.width - 5} y={el.height - 5} width="10" height="10" rx="2"
+                    fill="white" stroke="#f59e0b" strokeWidth="1.5" style={{ cursor: "se-resize" }}
+                    onMouseDown={ev => { ev.stopPropagation(); const { x, y } = toSVG(ev); setResizeState({ id: el.id, sw: el.width, sh: el.height, mx: x, my: y }); }} />
+                </>
+              )}
+            </g>
+          );
+        })}
+      </svg>
       {selected && (
-        <div className="absolute top-3 right-3 rounded-xl shadow-xl p-3 space-y-2 w-52"
+        <div className="absolute top-3 right-3 rounded-xl shadow-xl p-3 space-y-2.5 w-52"
           style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
-          <p className="text-xs font-semibold capitalize" style={{ color: "var(--text-2)" }}>{selected.type}</p>
+          <p className="text-[10px] font-bold tracking-wide uppercase" style={{ color: "var(--text-3)" }}>{selected.shape}</p>
           <div className="grid grid-cols-2 gap-1.5 text-xs">
-            {(["x","y","width","height"] as const).map(k => (
+            {(["x", "y", "width", "height"] as const).map(k => (
               <label key={k} className="flex flex-col gap-0.5">
                 <span style={{ color: "var(--text-3)" }}>{k}</span>
-                <input type="number" value={Math.round((selected as any)[k])}
+                <input type="number" value={Math.round(selected[k])}
                   onChange={e => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, [k]: +e.target.value } : el))}
-                  className="rounded px-1.5 py-1 outline-none w-full"
+                  className="rounded px-1.5 py-1 outline-none w-full text-xs"
                   style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text)" }} />
               </label>
             ))}
           </div>
-          <label className="flex flex-col gap-0.5 text-xs">
-            <span style={{ color: "var(--text-3)" }}>Color</span>
-            <input type="color" value={selected.color ?? "#6366f1"}
-              onChange={e => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, color: e.target.value } : el))}
-              className="w-full h-7 rounded cursor-pointer" />
-          </label>
+          <div className="grid grid-cols-2 gap-1.5 text-xs">
+            <label className="flex flex-col gap-0.5">
+              <span style={{ color: "var(--text-3)" }}>Stroke</span>
+              <input type="color" value={selected.color ?? "#6366f1"}
+                onChange={e => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, color: e.target.value } : el))}
+                className="w-full h-7 rounded cursor-pointer" />
+            </label>
+            <label className="flex flex-col gap-0.5">
+              <span style={{ color: "var(--text-3)" }}>Fill</span>
+              <input type="color" value={!selected.fill || selected.fill === "transparent" ? "#ffffff" : selected.fill}
+                onChange={e => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, fill: e.target.value } : el))}
+                className="w-full h-7 rounded cursor-pointer" />
+            </label>
+          </div>
           <button onClick={() => { setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}
             className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium"
             style={{ background: "rgba(239,68,68,0.1)", color: "#dc2626" }}>
@@ -274,16 +329,14 @@ function WireframeCanvas({
   );
 }
 
-/* ── Main page ── */
+/* ── Main Page ── */
 export default function WireframeEditorPage() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
   const qc = useQueryClient();
-  const [tool, setTool] = useState<Tool>("select");
-  const [zoom, setZoom] = useState(1);
   const [elements, setElements] = useState<WireframeElement[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [activeShape, setActiveShape] = useState<ShapeDef | null>(null);
   const [visOpen, setVisOpen] = useState(false);
-  const [permOpen, setPermOpen] = useState(false);
 
   const { data: doc, isLoading } = useQuery({
     queryKey: ["wireframe", id],
@@ -303,19 +356,26 @@ export default function WireframeEditorPage() {
 
   const updateVisibility = useMutation({
     mutationFn: (vis: string) => api.patch(`/documents/${id}/`, { visibility: vis }),
-    onSuccess: (_, vis) => { toast.success("Visibility updated"); qc.setQueryData(["wireframe", id], (old: any) => old ? { ...old, visibility: vis } : old); setVisOpen(false); },
+    onSuccess: (_, vis) => {
+      toast.success("Visibility updated");
+      qc.setQueryData(["wireframe", id], (old: Record<string, unknown>) => old ? { ...old, visibility: vis } : old);
+      setVisOpen(false);
+    },
   });
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
+    const h = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      const map: Record<string, Tool> = { v: "select", r: "rect", e: "circle", t: "text", l: "line", a: "arrow", s: "sticky", i: "image-placeholder" };
-      if (map[e.key.toLowerCase()]) setTool(map[e.key.toLowerCase()]);
+      if (e.key === "Escape") setActiveShape(null);
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
+        setElements(prev => prev.filter(el => el.id !== selectedId));
+        setSelectedId(null);
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === "s") { e.preventDefault(); save.mutate(); }
     };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [save]);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [save, selectedId]);
 
   if (isLoading) return (
     <div className="flex items-center justify-center h-full">
@@ -331,15 +391,22 @@ export default function WireframeEditorPage() {
       {/* Topbar */}
       <div className="flex items-center gap-3 px-4 py-2.5 shrink-0"
         style={{ background: "var(--bg-panel)", borderBottom: "1px solid var(--border)" }}>
-        <Link href="/wireframes" className="p-1.5 rounded-lg transition"
+        <Link href="/wireframes" className="p-1.5 rounded-lg"
           style={{ color: "var(--text-3)" }}
           onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
           <ArrowLeft className="w-4 h-4" />
         </Link>
-        <p className="text-sm font-semibold flex-1 truncate" style={{ color: "var(--text)" }}>{doc?.title}</p>
+        <p className="text-sm font-semibold flex-1 truncate" style={{ color: "var(--text)" }}>{doc?.title ?? "Wireframe"}</p>
 
-        {/* Visibility */}
+        {activeShape && (
+          <span className="text-xs px-2.5 py-1 rounded-lg font-medium"
+            style={{ background: "var(--accent-bg)", color: "var(--accent)" }}>
+            Placing: {activeShape.label} · Esc to cancel
+          </span>
+        )}
+
+        {/* Visibility picker */}
         <div className="relative">
           <button onClick={() => setVisOpen(o => !o)}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
@@ -349,7 +416,7 @@ export default function WireframeEditorPage() {
             <ChevronDown className="w-3 h-3" style={{ color: "var(--text-3)" }} />
           </button>
           {visOpen && (
-            <div className="absolute right-0 top-full mt-1 z-50 rounded-xl shadow-xl py-1 w-44"
+            <div className="absolute right-0 top-full mt-1 z-50 rounded-xl shadow-xl py-1 w-40"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--border-strong)" }}>
               {VISIBILITY_OPTIONS.map(({ value, label, icon: Icon }) => (
                 <button key={value} onClick={() => updateVisibility.mutate(value)}
@@ -357,7 +424,9 @@ export default function WireframeEditorPage() {
                   style={{ background: doc?.visibility === value ? "var(--accent-bg)" : "transparent", color: "var(--text)" }}
                   onMouseEnter={e => { if (doc?.visibility !== value) e.currentTarget.style.background = "var(--bg-hover)"; }}
                   onMouseLeave={e => { if (doc?.visibility !== value) e.currentTarget.style.background = "transparent"; }}>
-                  {doc?.visibility === value ? <Check className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--accent)" }} /> : <span className="w-3.5 h-3.5 shrink-0" />}
+                  {doc?.visibility === value
+                    ? <Check className="w-3.5 h-3.5 shrink-0" style={{ color: "var(--accent)" }} />
+                    : <span className="w-3.5 h-3.5 shrink-0" />}
                   <Icon className="w-3.5 h-3.5 shrink-0" />
                   {label}
                 </button>
@@ -366,13 +435,12 @@ export default function WireframeEditorPage() {
           )}
         </div>
 
-        {/* Zoom */}
-        <div className="flex items-center gap-1">
-          <button onClick={() => setZoom(z => Math.max(0.25, z - 0.1))} className="p-1.5 rounded-lg" style={{ color: "var(--text-3)" }}><ZoomOut className="w-3.5 h-3.5" /></button>
-          <span className="text-xs w-12 text-center" style={{ color: "var(--text-2)" }}>{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-1.5 rounded-lg" style={{ color: "var(--text-3)" }}><ZoomIn className="w-3.5 h-3.5" /></button>
-          <button onClick={() => setZoom(1)} className="p-1.5 rounded-lg" style={{ color: "var(--text-3)" }} title="Reset zoom"><RotateCcw className="w-3.5 h-3.5" /></button>
-        </div>
+        <button onClick={() => { setSelectedId(null); setElements([]); }} title="Clear canvas"
+          className="p-1.5 rounded-lg" style={{ color: "var(--text-3)" }}
+          onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
+          onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
+          <Trash2 className="w-4 h-4" />
+        </button>
 
         <button onClick={() => save.mutate()} disabled={save.isPending}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50"
@@ -383,35 +451,22 @@ export default function WireframeEditorPage() {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Toolbar */}
-        <div className="flex flex-col gap-1 p-2 shrink-0"
-          style={{ background: "var(--bg-panel)", borderRight: "1px solid var(--border)", width: 52 }}>
-          {TOOLS.map(({ id: tid, icon: Icon, label }) => (
-            <button key={tid} onClick={() => setTool(tid)} title={label}
-              className="p-2.5 rounded-xl flex items-center justify-center transition"
-              style={{
-                background: tool === tid ? "var(--accent-bg)" : "transparent",
-                color: tool === tid ? "var(--accent)" : "var(--text-3)",
-              }}
-              onMouseEnter={e => { if (tool !== tid) e.currentTarget.style.background = "var(--bg-hover)"; }}
-              onMouseLeave={e => { if (tool !== tid) e.currentTarget.style.background = "transparent"; }}>
-              <Icon className="w-4 h-4" />
-            </button>
-          ))}
-          <div className="mt-auto border-t pt-1" style={{ borderColor: "var(--border)" }}>
-            <button onClick={() => setElements([])} title="Clear canvas"
-              className="p-2.5 rounded-xl flex items-center justify-center w-full"
-              style={{ color: "var(--text-3)" }}
-              onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
-              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}>
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
+        {/* Shape Library Panel */}
+        <ShapesPanel
+          onSelect={s => setActiveShape(prev => prev?.id === s.id ? null : s)}
+          activeShapeId={activeShape?.id ?? null}
+        />
         {/* Canvas */}
-        <WireframeCanvas elements={elements} setElements={setElements} tool={tool} zoom={zoom} />
+        <WireframeCanvas
+          elements={elements}
+          setElements={setElements}
+          selectedId={selectedId}
+          setSelectedId={setSelectedId}
+          activeShape={activeShape}
+          onPlaced={() => setActiveShape(null)}
+        />
       </div>
     </div>
   );
 }
+
