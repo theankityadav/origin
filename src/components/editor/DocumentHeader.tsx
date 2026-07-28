@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare, Share2, History, Lock, MoreHorizontal, Check, Loader2, Archive, Trash2, Star, Download, FileText, FileCode, Table2, SearchCheck, SearchX, FolderOpen, ChevronRight, FileDown, Presentation } from "lucide-react";
+import { MessageSquare, Share2, History, Lock, MoreHorizontal, Check, Loader2, Archive, Trash2, Star, Download, FileText, FileCode, Table2, SearchCheck, SearchX, FolderOpen, ChevronRight, FileDown } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@/store/auth.store";
 import api from "@/lib/api";
@@ -81,97 +81,6 @@ export default function DocumentHeader({
       .catch(() => toast.error("Export failed"));
     setMenuOpen(false);
     setShowExport(false);
-  };
-
-  const handlePptxExport = async () => {
-    if (!doc) return;
-    setMenuOpen(false);
-    setShowExport(false);
-    try {
-      const PptxGenJS = (await import("pptxgenjs")).default;
-      const pptx = new PptxGenJS();
-      pptx.title = doc.title || "Presentation";
-      pptx.subject = doc.title || "Presentation";
-
-      const nodes: any[] = doc.content?.content ?? [];
-
-      /* Group content into slides — one slide per heading or every ~6 blocks */
-      const slideGroups: any[][] = [];
-      let current: any[] = [];
-      nodes.forEach((node: any) => {
-        if (node.type === "heading" && node.attrs?.level === 1 && current.length > 0) {
-          slideGroups.push(current);
-          current = [node];
-        } else {
-          current.push(node);
-          if (current.length >= 7) { slideGroups.push(current); current = []; }
-        }
-      });
-      if (current.length > 0) slideGroups.push(current);
-      if (slideGroups.length === 0) slideGroups.push([{ type: "paragraph", content: [{ type: "text", text: doc.title || "Untitled" }] }]);
-
-      const getText = (n: any): string =>
-        (n.content ?? []).map((c: any) => c.text ?? getText(c)).join("");
-
-      /* Title slide */
-      const titleSlide = pptx.addSlide();
-      titleSlide.background = { color: "1e1e2e" };
-      titleSlide.addText(doc.title || "Untitled", {
-        x: 0.5, y: 1.5, w: 9, h: 1.5,
-        fontSize: 36, bold: true, color: "a5b4fc",
-        align: "center", fontFace: "Arial",
-      });
-      if (doc.owner?.name) {
-        titleSlide.addText(doc.owner.name, {
-          x: 0.5, y: 3.2, w: 9, h: 0.5,
-          fontSize: 16, color: "94a3b8", align: "center", fontFace: "Arial",
-        });
-      }
-
-      /* Content slides */
-      slideGroups.forEach(group => {
-        const slide = pptx.addSlide();
-        slide.background = { color: "1e1e2e" };
-        let yPos = 0.4;
-        group.forEach((node: any) => {
-          const text = getText(node);
-          if (!text.trim()) return;
-          if (node.type === "heading") {
-            const lvl = node.attrs?.level ?? 1;
-            slide.addText(text, {
-              x: 0.5, y: yPos, w: 9, h: lvl === 1 ? 0.9 : 0.65,
-              fontSize: lvl === 1 ? 28 : lvl === 2 ? 22 : 18,
-              bold: true, color: lvl === 1 ? "a5b4fc" : "c4b5fd",
-              fontFace: "Arial",
-            });
-            yPos += lvl === 1 ? 1.0 : 0.75;
-          } else if (node.type === "bulletList" || node.type === "orderedList") {
-            const items = (node.content ?? []).map((item: any, i: number) => {
-              const t = (item.content ?? []).map(getText).join("");
-              return { text: (node.type === "orderedList" ? `${i + 1}. ` : "• ") + t };
-            });
-            if (items.length) {
-              slide.addText(items, { x: 0.7, y: yPos, w: 8.6, h: items.length * 0.38,
-                fontSize: 14, color: "cbd5e1", fontFace: "Arial", lineSpacingMultiple: 1.3 });
-              yPos += items.length * 0.42 + 0.1;
-            }
-          } else {
-            slide.addText(text, {
-              x: 0.5, y: yPos, w: 9, h: 0.45,
-              fontSize: 14, color: "cbd5e1", fontFace: "Arial", wrap: true,
-            });
-            yPos += 0.55;
-          }
-          if (yPos > 6.5) yPos = 6.5;
-        });
-      });
-
-      await pptx.writeFile({ fileName: `${doc.title || "presentation"}.pptx` });
-      toast.success("Exported as .pptx");
-    } catch (err) {
-      console.error(err);
-      toast.error("PPT export failed");
-    }
   };
 
   const handlePdfExport = () => {
@@ -358,14 +267,6 @@ export default function DocumentHeader({
                     onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                   >
                     <FileDown className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} /> PDF (.pdf)
-                  </button>
-                  <button onClick={handlePptxExport}
-                    className="flex items-center gap-2 px-3 py-2 text-xs w-full transition-colors"
-                    style={{ color: "var(--text-2)" }}
-                    onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
-                    onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                  >
-                    <Presentation className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} /> PowerPoint (.pptx)
                   </button>
                 </div>
               )}
