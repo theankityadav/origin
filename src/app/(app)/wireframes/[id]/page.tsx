@@ -495,16 +495,33 @@ function WireframeCanvas({
   const [drawingConn, setDrawingConn] = useState<{ fromId: string; fromSide: "top"|"right"|"bottom"|"left"; mx: number; my: number } | null>(null);
   const drawingConnRef = useRef<{ fromId: string; fromSide: "top"|"right"|"bottom"|"left"; mx: number; my: number } | null>(null);
   const [snapTarget, setSnapTarget] = useState<{ id: string; side: "top"|"right"|"bottom"|"left" } | null>(null);
+  const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
 
   const toSVG = useCallback((e: React.MouseEvent) => {
     const r = svgRef.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }, []);
 
+  // Delete connector on keyboard
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedConnId) {
+        setConnectors(prev => prev.filter(c => c.id !== selectedConnId));
+        setSelectedConnId(null);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedConnId, setConnectors]);
+
   const onCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
     if (editingId) return;
     const tag = (e.target as SVGElement).tagName;
-    if (tag === "svg" || tag === "rect" && (e.target as SVGElement).getAttribute("fill") === "url(#dotgrid)") setSelectedId(null);
+    if (tag === "svg" || tag === "rect" && (e.target as SVGElement).getAttribute("fill") === "url(#dotgrid)") {
+      setSelectedId(null);
+      setSelectedConnId(null);
+    }
     if (activeShape) {
       const { x, y } = toSVG(e);
       const el: WireframeElement = {
@@ -620,6 +637,9 @@ function WireframeCanvas({
           <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
             <path d="M0,0 L0,6 L8,3 Z" fill="#38bdf8" />
           </marker>
+          <marker id="arrowhead-sel" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#f59e0b" />
+          </marker>
         </defs>
 
         <rect width="100%" height="100%" fill="url(#dotgrid)" />
@@ -631,12 +651,37 @@ function WireframeCanvas({
           if (!from || !to) return null;
           const p1 = connPt(from, conn.fromSide);
           const p2 = connPt(to, conn.toSide);
-          const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+          const midy = (p1.y + p2.y) / 2;
+          const d = `M${p1.x},${p1.y} C${p1.x},${midy} ${p2.x},${midy} ${p2.x},${p2.y}`;
+          const isSel = conn.id === selectedConnId;
+          const midX = (p1.x + p2.x) / 2;
+          const midY = midy;
           return (
-            <g key={conn.id}>
-              <path d={`M${p1.x},${p1.y} C${p1.x},${my} ${p2.x},${my} ${p2.x},${p2.y}`}
-                fill="none" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="5,3"
-                markerEnd="url(#arrowhead)" />
+            <g key={conn.id} style={{ cursor: "pointer" }}
+              onClick={ev => { ev.stopPropagation(); setSelectedConnId(conn.id); setSelectedId(null); }}>
+              {/* Wide invisible hit area */}
+              <path d={d} fill="none" stroke="transparent" strokeWidth="14" />
+              {/* Visible line */}
+              <path d={d} fill="none"
+                stroke={isSel ? "#f59e0b" : "#38bdf8"}
+                strokeWidth={isSel ? 2.5 : 1.5}
+                strokeDasharray={isSel ? "none" : "5,3"}
+                markerEnd={isSel ? "url(#arrowhead-sel)" : "url(#arrowhead)"} />
+              {/* Midpoint controls when selected */}
+              {isSel && (
+                <g>
+                  {/* Move-dot at midpoint */}
+                  <circle cx={midX} cy={midY} r="6" fill="#f59e0b" stroke="#fff" strokeWidth="2" />
+                  {/* Delete X button */}
+                  <g transform={`translate(${midX + 14},${midY - 14})`}
+                    style={{ cursor: "pointer" }}
+                    onClick={ev => { ev.stopPropagation(); setConnectors(prev => prev.filter(c => c.id !== conn.id)); setSelectedConnId(null); }}>
+                    <circle r="9" fill="#dc2626" stroke="#fff" strokeWidth="1.5" />
+                    <line x1="-4" y1="-4" x2="4" y2="4" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+                    <line x1="4" y1="-4" x2="-4" y2="4" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+                  </g>
+                </g>
+              )}
             </g>
           );
         })}
@@ -820,21 +865,24 @@ export default function WireframeEditorPage() {
   const [activeShape, setActiveShape] = useState<ShapeDef | null>(null);
   const [visOpen, setVisOpen] = useState(false);
 
-  /* ── Undo / Redo history ── */
-  const history = useRef<WireframeElement[][]>([]);
-  const future = useRef<WireframeElement[][]>([]);
+  /* ── Undo / Redo history (elements + connectors together) ── */
+  type Snapshot = { els: WireframeElement[]; conns: Connector[] };
+  const history = useRef<Snapshot[]>([]);
+  const future  = useRef<Snapshot[]>([]);
 
-  const pushHistory = useCallback((prev: WireframeElement[]) => {
-    history.current = [...history.current.slice(-49), prev];
+  const pushHistory = useCallback((els: WireframeElement[], conns: Connector[]) => {
+    history.current = [...history.current.slice(-49), { els, conns }];
     future.current = [];
   }, []);
+
+  const connectorsRef = useRef<Connector[]>([]);
+  useEffect(() => { connectorsRef.current = connectors; }, [connectors]);
 
   const setElementsWithHistory = useCallback(
     (updater: WireframeElement[] | ((prev: WireframeElement[]) => WireframeElement[])) => {
       setElements(prev => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
-        pushHistory(prev);
-        return next;
+        pushHistory(prev, connectorsRef.current);
+        return typeof updater === "function" ? updater(prev) : updater;
       });
     },
     [pushHistory]
@@ -883,18 +931,30 @@ export default function WireframeEditorPage() {
       if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "z") {
         e.preventDefault();
         if (history.current.length === 0) return;
-        const prev = history.current[history.current.length - 1];
+        const snap = history.current[history.current.length - 1];
         history.current = history.current.slice(0, -1);
-        setElements(cur => { future.current = [cur, ...future.current.slice(0, 49)]; return prev; });
+        setElements(curEls => {
+          setConnectors(curConns => {
+            future.current = [{ els: curEls, conns: curConns }, ...future.current.slice(0, 49)];
+            return snap.conns;
+          });
+          return snap.els;
+        });
         setSelectedId(null);
       }
       /* Redo: Ctrl+Y or Ctrl+Shift+Z */
       if ((e.metaKey || e.ctrlKey) && (e.key === "y" || (e.shiftKey && e.key === "z"))) {
         e.preventDefault();
         if (future.current.length === 0) return;
-        const next = future.current[0];
+        const snap = future.current[0];
         future.current = future.current.slice(1);
-        setElements(cur => { history.current = [...history.current.slice(-49), cur]; return next; });
+        setElements(curEls => {
+          setConnectors(curConns => {
+            history.current = [...history.current.slice(-49), { els: curEls, conns: curConns }];
+            return snap.conns;
+          });
+          return snap.els;
+        });
         setSelectedId(null);
       }
     };
