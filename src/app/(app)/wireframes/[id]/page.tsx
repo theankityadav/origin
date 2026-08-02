@@ -634,11 +634,13 @@ function WireframeCanvas({
           <pattern id="dotgrid" width="20" height="20" patternUnits="userSpaceOnUse">
             <circle cx="1" cy="1" r="0.6" fill="rgba(128,128,128,0.2)" />
           </pattern>
-          <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-            <path d="M0,0 L0,6 L8,3 Z" fill="#38bdf8" />
+          {/* Cyan solid arrowhead */}
+          <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+            <path d="M0,1 L0,9 L9,5 Z" fill="#22d3ee" />
           </marker>
-          <marker id="arrowhead-sel" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-            <path d="M0,0 L0,6 L8,3 Z" fill="#f59e0b" />
+          {/* Amber arrowhead for selected connector */}
+          <marker id="arrowhead-sel" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+            <path d="M0,1 L0,9 L9,5 Z" fill="#f59e0b" />
           </marker>
         </defs>
 
@@ -651,11 +653,24 @@ function WireframeCanvas({
           if (!from || !to) return null;
           const p1 = connPt(from, conn.fromSide);
           const p2 = connPt(to, conn.toSide);
-          const midy = (p1.y + p2.y) / 2;
-          const d = `M${p1.x},${p1.y} C${p1.x},${midy} ${p2.x},${midy} ${p2.x},${p2.y}`;
           const isSel = conn.id === selectedConnId;
+
+          // Straight line (unselected) vs orthogonal elbow (selected)
           const midX = (p1.x + p2.x) / 2;
-          const midY = midy;
+          const midY = (p1.y + p2.y) / 2;
+
+          // Orthogonal elbow: go horizontal first then vertical
+          const elbowD = `M${p1.x},${p1.y} L${midX},${p1.y} L${midX},${p2.y} L${p2.x},${p2.y}`;
+          const straightD = `M${p1.x},${p1.y} L${p2.x},${p2.y}`;
+          const d = isSel ? elbowD : straightD;
+
+          // Elbow midpoint handles for selected connector
+          const elbowHandles = isSel ? [
+            { x: midX,        y: p1.y },  // top elbow corner
+            { x: midX,        y: midY },  // middle of vertical segment
+            { x: midX,        y: p2.y },  // bottom elbow corner
+          ] : [];
+
           return (
             <g key={conn.id} style={{ cursor: "pointer" }}
               onClick={ev => { ev.stopPropagation(); setSelectedConnId(conn.id); setSelectedId(null); }}>
@@ -663,17 +678,20 @@ function WireframeCanvas({
               <path d={d} fill="none" stroke="transparent" strokeWidth="14" />
               {/* Visible line */}
               <path d={d} fill="none"
-                stroke={isSel ? "#f59e0b" : "#38bdf8"}
-                strokeWidth={isSel ? 2.5 : 1.5}
-                strokeDasharray={isSel ? "none" : "5,3"}
+                stroke={isSel ? "#f59e0b" : "#22d3ee"}
+                strokeWidth={isSel ? 2 : 1.5}
+                strokeDasharray="8,5"
                 markerEnd={isSel ? "url(#arrowhead-sel)" : "url(#arrowhead)"} />
-              {/* Midpoint controls when selected */}
+              {/* Segment midpoint handles + delete when selected */}
               {isSel && (
                 <g>
-                  {/* Move-dot at midpoint */}
-                  <circle cx={midX} cy={midY} r="6" fill="#f59e0b" stroke="#fff" strokeWidth="2" />
-                  {/* Delete X button */}
-                  <g transform={`translate(${midX + 14},${midY - 14})`}
+                  {elbowHandles.map((h, i) => (
+                    <circle key={i} cx={h.x} cy={h.y} r="5"
+                      fill="#22d3ee" stroke="#0f172a" strokeWidth="1.5"
+                      style={{ cursor: "grab" }} />
+                  ))}
+                  {/* Delete X button near midpoint */}
+                  <g transform={`translate(${midX + 16},${midY - 16})`}
                     style={{ cursor: "pointer" }}
                     onClick={ev => { ev.stopPropagation(); setConnectors(prev => prev.filter(c => c.id !== conn.id)); setSelectedConnId(null); }}>
                     <circle r="9" fill="#dc2626" stroke="#fff" strokeWidth="1.5" />
@@ -686,26 +704,22 @@ function WireframeCanvas({
           );
         })}
 
-        {/* In-progress connector being drawn */}
+        {/* In-progress connector being drawn — straight dashed line to cursor */}
         {drawingConn && (() => {
           const from = elements.find(e => e.id === drawingConn.fromId);
           if (!from) return null;
           const p1 = connPt(from, drawingConn.fromSide);
-          // Snap end point to target dot if close
           let ex = drawingConn.mx, ey = drawingConn.my;
           if (snapTarget) {
             const snapEl = elements.find(e => e.id === snapTarget.id);
             if (snapEl) { const sp = connPt(snapEl, snapTarget.side); ex = sp.x; ey = sp.y; }
           }
-          const mx = (p1.x + ex) / 2;
           return (
             <g>
-              {/* Orthogonal routing: elbow line */}
-              <path d={`M${p1.x},${p1.y} C${p1.x},${mx} ${ex},${mx} ${ex},${ey}`}
-                fill="none" stroke="#38bdf8" strokeWidth="2" strokeDasharray="6,3"
+              <line x1={p1.x} y1={p1.y} x2={ex} y2={ey}
+                stroke="#22d3ee" strokeWidth="1.5" strokeDasharray="8,5"
                 markerEnd="url(#arrowhead)" />
-              {/* Source dot highlight */}
-              <circle cx={p1.x} cy={p1.y} r="5" fill="#38bdf8" stroke="#fff" strokeWidth="2" />
+              <circle cx={p1.x} cy={p1.y} r="5" fill="#22d3ee" stroke="#fff" strokeWidth="2" />
             </g>
           );
         })()}
