@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/auth.store";
 import AppSidebar from "./AppSidebar";
@@ -9,6 +9,7 @@ import SearchModal from "./SearchModal";
 import NewDocModal from "./NewDocModal";
 import { useUIStore } from "@/store/ui.store";
 import api from "@/lib/api";
+import { AlertTriangle } from "lucide-react";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -18,6 +19,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const activeCompanyId = useAuthStore((s) => s.activeCompanyId);
   const setActiveCompany = useAuthStore((s) => s.setActiveCompany);
   const hasHydrated = useAuthStore((s) => s._hasHydrated);
+  const [isSuspended, setIsSuspended] = useState(false);
+  const [suspendedName, setSuspendedName] = useState("");
 
   useEffect(() => {
     if (!hasHydrated) return;
@@ -38,6 +41,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }).catch(() => {});
   }, [hasHydrated, accessToken, activeCompanyId, setActiveCompany]);
 
+  // Check if active company is suspended
+  useEffect(() => {
+    if (!activeCompanyId || !accessToken) return;
+    api.get(`/companies/${activeCompanyId}/`).then(({ data }) => {
+      setIsSuspended(data.is_active === false);
+      setSuspendedName(data.name ?? "");
+    }).catch(() => {});
+  }, [activeCompanyId, accessToken]);
+
   if (!hasHydrated) return null;
   if (!user || !accessToken) return null;
   if (user.role === "super_admin") return null;
@@ -47,8 +59,26 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <AppSidebar />
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <AppTopbar />
+
+        {/* Suspended workspace banner */}
+        {isSuspended && (
+          <div className="shrink-0 flex items-center gap-3 px-5 py-2.5"
+            style={{ background: "rgba(239,68,68,0.12)", borderBottom: "1px solid rgba(239,68,68,0.3)" }}>
+            <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: "#f87171" }} />
+            <p className="text-sm" style={{ color: "#fca5a5" }}>
+              <span className="font-semibold">{suspendedName || "This workspace"} is suspended.</span>
+              {" "}All content is read-only. Contact your administrator to reactivate.
+            </p>
+          </div>
+        )}
+
         <main className="flex-1 overflow-y-auto p-6 lg:p-8">
-          {children}
+          {/* Overlay to block interaction when suspended */}
+          {isSuspended ? (
+            <div className="relative pointer-events-none select-none opacity-60">
+              {children}
+            </div>
+          ) : children}
         </main>
       </div>
       <SearchModal />
