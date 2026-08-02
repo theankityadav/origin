@@ -500,24 +500,63 @@ function WireframeCanvas({
   const drawingConnRef = useRef<{ fromId: string; fromSide: "top"|"right"|"bottom"|"left"; mx: number; my: number } | null>(null);
   const [snapTarget, setSnapTarget] = useState<{ id: string; side: "top"|"right"|"bottom"|"left" } | null>(null);
   const [selectedConnId, setSelectedConnId] = useState<string | null>(null);
+  // Multi-select
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const marqueeRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const [multiDrag, setMultiDrag] = useState<{ ox: number; oy: number; starts: Record<string, { x: number; y: number }> } | null>(null);
 
   const toSVG = useCallback((e: React.MouseEvent) => {
     const r = svgRef.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   }, []);
 
-  // Delete connector on keyboard
+  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedConnId) {
-        setConnectors(prev => prev.filter(c => c.id !== selectedConnId));
-        setSelectedConnId(null);
+      // Ctrl+A → select all
+      if ((e.ctrlKey || e.metaKey) && e.key === "a") {
+        e.preventDefault();
+        setSelectedIds(new Set(elements.map(el => el.id)));
+        setSelectedId(null);
+        return;
+      }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        // Delete multi-selected shapes
+        if (selectedIds.size > 0) {
+          setElements(prev => prev.filter(el => !selectedIds.has(el.id)));
+          setConnectors(prev => prev.filter(c => !selectedIds.has(c.fromId) && !selectedIds.has(c.toId)));
+          setSelectedIds(new Set());
+          return;
+        }
+        // Delete single selected connector
+        if (selectedConnId) {
+          setConnectors(prev => prev.filter(c => c.id !== selectedConnId));
+          setSelectedConnId(null);
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [selectedConnId, setConnectors]);
+  }, [selectedConnId, selectedIds, elements, setConnectors, setElements, setSelectedId]);
+
+  const onCanvasMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (editingId) return;
+    if (activeShape || drawingConnRef.current) return;
+    const tag = (e.target as SVGElement).tagName;
+    const isBg = tag === "svg" || (tag === "rect" && (e.target as SVGElement).getAttribute("fill") === "url(#dotgrid)");
+    if (isBg && !e.shiftKey) {
+      // Start marquee drag
+      const { x, y } = toSVG(e);
+      const m = { x0: x, y0: y, x1: x, y1: y };
+      marqueeRef.current = m;
+      setMarquee(m);
+      setSelectedId(null);
+      setSelectedConnId(null);
+      setSelectedIds(new Set());
+    }
+  };
 
   const onCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
     if (editingId) return;
@@ -525,6 +564,7 @@ function WireframeCanvas({
     if (tag === "svg" || tag === "rect" && (e.target as SVGElement).getAttribute("fill") === "url(#dotgrid)") {
       setSelectedId(null);
       setSelectedConnId(null);
+      if (!e.shiftKey) setSelectedIds(new Set());
     }
     if (activeShape) {
       const { x, y } = toSVG(e);
@@ -542,6 +582,27 @@ function WireframeCanvas({
 
   const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const { x, y } = toSVG(e);
+    // Marquee selection update
+    if (marqueeRef.current) {
+      const m = { ...marqueeRef.current, x1: x, y1: y };
+      marqueeRef.current = m;
+      setMarquee({ ...m });
+      // Compute selected IDs from marquee bounds
+      const minX = Math.min(m.x0, m.x1), maxX = Math.max(m.x0, m.x1);
+      const minY = Math.min(m.y0, m.y1), maxY = Math.max(m.y0, m.y1);
+      const hit = new Set(elements
+        .filter(el => el.x < maxX && el.x + el.width > minX && el.y < maxY && el.y + el.height > minY)
+        .map(el => el.id));
+      setSelectedIds(hit);
+      return;
+    }
+    if (multiDrag) {
+      setElements(prev => prev.map(el => {
+        if (!multiDrag.starts[el.id]) return el;
+        return { ...el, x: multiDrag.starts[el.id].x + x - multiDrag.ox, y: multiDrag.starts[el.id].y + y - multiDrag.oy };
+      }));
+      return;
+    }
     if (drag) {
       setElements(prev => prev.map(el => el.id === drag.id ? { ...el, x: x - drag.ox, y: y - drag.oy } : el));
     }
@@ -609,6 +670,9 @@ function WireframeCanvas({
     setDrag(null);
     setResizeState(null);
     setRotateState(null);
+    marqueeRef.current = null;
+    setMarquee(null);
+    setMultiDrag(null);
   };
 
   const startEdit = (el: WireframeElement) => {
@@ -646,8 +710,9 @@ function WireframeCanvas({
   return (
     <div className="relative flex-1 overflow-auto" style={{ background: "var(--bg)" }}>
       <svg ref={svgRef} width="3000" height="2000"
-        style={{ display: "block", cursor: activeShape || drawingConn ? "crosshair" : "default" }}
+        style={{ display: "block", cursor: activeShape || drawingConn ? "crosshair" : marqueeRef.current ? "crosshair" : "default" }}
         onClick={onCanvasClick}
+        onMouseDown={onCanvasMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={e => onMouseUp(e)}
         onMouseLeave={e => onMouseUp(e)}>
@@ -758,11 +823,13 @@ function WireframeCanvas({
           const cx    = el.x + el.width / 2;
           const cy    = el.y + el.height / 2;
 
+          const isMultiSel = selectedIds.has(el.id);
+
           return (
             <g key={el.id}
               transform={`rotate(${rot},${cx},${cy})`}
               style={{
-                cursor: drag?.id === el.id ? "grabbing" : "grab",
+                cursor: (multiDrag || drag?.id === el.id) ? "grabbing" : "grab",
                 opacity: (el.opacity ?? 100) / 100,
                 filter: el.shadow ? "drop-shadow(2px 4px 6px rgba(0,0,0,0.5))" : undefined,
               }}
@@ -771,11 +838,33 @@ function WireframeCanvas({
               onMouseDown={ev => {
                 ev.stopPropagation();
                 const { x, y } = toSVG(ev);
-                setDrag({ id: el.id, ox: x - el.x, oy: y - el.y });
-                setSelectedId(el.id);
+                if (isMultiSel && selectedIds.size > 1) {
+                  // Start moving all selected shapes together
+                  const starts: Record<string, { x: number; y: number }> = {};
+                  elements.forEach(e => { if (selectedIds.has(e.id)) starts[e.id] = { x: e.x, y: e.y }; });
+                  setMultiDrag({ ox: x, oy: y, starts });
+                } else {
+                  setDrag({ id: el.id, ox: x - el.x, oy: y - el.y });
+                  if (!ev.shiftKey) setSelectedIds(new Set());
+                  setSelectedId(el.id);
+                }
               }}
               onDoubleClick={ev => { ev.stopPropagation(); startEdit(el); }}
-              onClick={ev => { ev.stopPropagation(); setSelectedId(el.id); }}>
+              onClick={ev => {
+                ev.stopPropagation();
+                if (ev.shiftKey) {
+                  // Shift+click: toggle in/out of multi-selection
+                  setSelectedIds(prev => {
+                    const next = new Set(prev);
+                    if (next.has(el.id)) next.delete(el.id); else next.add(el.id);
+                    return next;
+                  });
+                  setSelectedId(null);
+                } else {
+                  setSelectedId(el.id);
+                  setSelectedIds(new Set());
+                }
+              }}>
 
               {/* Shape SVG */}
               <svg x={el.x} y={el.y} width={el.width} height={el.height} overflow="visible"
@@ -886,6 +975,13 @@ function WireframeCanvas({
                 </text>
               )}
 
+              {/* Multi-selection highlight ring */}
+              {isMultiSel && !isSel && (
+                <rect x={el.x - 3} y={el.y - 3} width={el.width + 6} height={el.height + 6}
+                  fill="none" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="5 3" rx="3"
+                  style={{ pointerEvents: "none" }} />
+              )}
+
               {/* Selection ring + resize + rotate */}
               {isSel && (
                 <>
@@ -937,7 +1033,61 @@ function WireframeCanvas({
             </g>
           );
         })}
+
+        {/* Marquee selection rectangle */}
+        {marquee && (() => {
+          const x = Math.min(marquee.x0, marquee.x1);
+          const y = Math.min(marquee.y0, marquee.y1);
+          const w = Math.abs(marquee.x1 - marquee.x0);
+          const h = Math.abs(marquee.y1 - marquee.y0);
+          if (w < 2 && h < 2) return null;
+          return (
+            <rect x={x} y={y} width={w} height={h}
+              fill="rgba(56,189,248,0.08)"
+              stroke="#38bdf8"
+              strokeWidth="1.5"
+              strokeDasharray="6 3"
+              style={{ pointerEvents: "none" }} />
+          );
+        })()}
       </svg>
+
+      {/* Multi-select action bar */}
+      {selectedIds.size > 0 && (
+        <div style={{
+          position: "absolute", bottom: 24, left: "50%", transform: "translateX(-50%)",
+          display: "flex", alignItems: "center", gap: 8,
+          background: "rgba(15,23,42,0.95)", border: "1px solid rgba(56,189,248,0.3)",
+          borderRadius: 10, padding: "8px 16px", zIndex: 60,
+          boxShadow: "0 4px 24px rgba(0,0,0,0.5)",
+        }}>
+          <span style={{ color: "#38bdf8", fontSize: 13, fontWeight: 600 }}>
+            {selectedIds.size} shape{selectedIds.size > 1 ? "s" : ""} selected
+          </span>
+          <div style={{ width: 1, height: 20, background: "rgba(255,255,255,0.12)" }} />
+          <button
+            onClick={() => {
+              setElements(prev => prev.filter(el => !selectedIds.has(el.id)));
+              setConnectors(prev => prev.filter(c => !selectedIds.has(c.fromId) && !selectedIds.has(c.toId)));
+              setSelectedIds(new Set());
+            }}
+            style={{
+              display: "flex", alignItems: "center", gap: 5,
+              background: "rgba(220,38,38,0.15)", border: "1px solid rgba(220,38,38,0.4)",
+              borderRadius: 6, padding: "4px 10px", color: "#f87171", fontSize: 12, cursor: "pointer",
+            }}>
+            🗑 Delete
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            style={{
+              background: "transparent", border: "1px solid rgba(255,255,255,0.15)",
+              borderRadius: 6, padding: "4px 10px", color: "#94a3b8", fontSize: 12, cursor: "pointer",
+            }}>
+            ✕ Deselect
+          </button>
+        </div>
+      )}
 
       {/* Inline text editor */}
       {editingId && (() => {
