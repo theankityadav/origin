@@ -494,6 +494,7 @@ function WireframeCanvas({
   const [editText, setEditText]   = useState("");
   const [drawingConn, setDrawingConn] = useState<{ fromId: string; fromSide: "top"|"right"|"bottom"|"left"; mx: number; my: number } | null>(null);
   const drawingConnRef = useRef<{ fromId: string; fromSide: "top"|"right"|"bottom"|"left"; mx: number; my: number } | null>(null);
+  const [snapTarget, setSnapTarget] = useState<{ id: string; side: "top"|"right"|"bottom"|"left" } | null>(null);
 
   const toSVG = useCallback((e: React.MouseEvent) => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -539,30 +540,51 @@ function WireframeCanvas({
     if (drawingConnRef.current) {
       const updated = { ...drawingConnRef.current, mx: x, my: y };
       drawingConnRef.current = updated;
-      setDrawingConn(updated);
+      setDrawingConn({ ...updated });
+      // Find nearest connection dot on any other element (snap within 24px)
+      let best: { id: string; side: "top"|"right"|"bottom"|"left" } | null = null;
+      let bestDist = 24;
+      const SIDES_LIST: ("top"|"right"|"bottom"|"left")[] = ["top","right","bottom","left"];
+      for (const el of elements) {
+        if (el.id === drawingConnRef.current.fromId) continue;
+        for (const side of SIDES_LIST) {
+          const pt = connPt(el, side);
+          const d = Math.hypot(pt.x - x, pt.y - y);
+          if (d < bestDist) { bestDist = d; best = { id: el.id, side }; }
+        }
+      }
+      setSnapTarget(best);
     }
   };
 
   const onMouseUp = (e?: React.MouseEvent) => {
-    // Complete connector if we were drawing one
-    if (drawingConnRef.current && e) {
-      const els = document.elementsFromPoint(e.clientX, e.clientY);
-      for (const el of els) {
-        const toId   = (el as HTMLElement).dataset?.connid;
-        const toSide = (el as HTMLElement).dataset?.connside as "top"|"right"|"bottom"|"left" | undefined;
-        if (toId && toSide && toId !== drawingConnRef.current.fromId) {
-          setConnectors(prev => [...prev, {
-            id: uid(),
-            fromId: drawingConnRef.current!.fromId,
-            fromSide: drawingConnRef.current!.fromSide,
-            toId, toSide,
-          }]);
-          break;
+    if (drawingConnRef.current) {
+      const { x, y } = e ? toSVG(e) : { x: drawingConnRef.current.mx, y: drawingConnRef.current.my };
+      // Find nearest dot within 24px
+      const SIDES_LIST: ("top"|"right"|"bottom"|"left")[] = ["top","right","bottom","left"];
+      let best: { id: string; side: "top"|"right"|"bottom"|"left" } | null = null;
+      let bestDist = 24;
+      for (const el of elements) {
+        if (el.id === drawingConnRef.current.fromId) continue;
+        for (const side of SIDES_LIST) {
+          const pt = connPt(el, side);
+          const d = Math.hypot(pt.x - x, pt.y - y);
+          if (d < bestDist) { bestDist = d; best = { id: el.id, side }; }
         }
+      }
+      if (best) {
+        setConnectors(prev => [...prev, {
+          id: uid(),
+          fromId: drawingConnRef.current!.fromId,
+          fromSide: drawingConnRef.current!.fromSide,
+          toId: best!.id,
+          toSide: best!.side,
+        }]);
       }
     }
     drawingConnRef.current = null;
     setDrawingConn(null);
+    setSnapTarget(null);
     setDrag(null);
     setResizeState(null);
     setRotateState(null);
@@ -585,7 +607,7 @@ function WireframeCanvas({
   return (
     <div className="relative flex-1 overflow-auto" style={{ background: "var(--bg)" }}>
       <svg ref={svgRef} width="3000" height="2000"
-        style={{ display: "block", cursor: activeShape ? "crosshair" : "default" }}
+        style={{ display: "block", cursor: activeShape || drawingConn ? "crosshair" : "default" }}
         onClick={onCanvasClick}
         onMouseMove={onMouseMove}
         onMouseUp={e => onMouseUp(e)}
@@ -624,8 +646,23 @@ function WireframeCanvas({
           const from = elements.find(e => e.id === drawingConn.fromId);
           if (!from) return null;
           const p1 = connPt(from, drawingConn.fromSide);
-          return <line x1={p1.x} y1={p1.y} x2={drawingConn.mx} y2={drawingConn.my}
-            stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="4,3" />;
+          // Snap end point to target dot if close
+          let ex = drawingConn.mx, ey = drawingConn.my;
+          if (snapTarget) {
+            const snapEl = elements.find(e => e.id === snapTarget.id);
+            if (snapEl) { const sp = connPt(snapEl, snapTarget.side); ex = sp.x; ey = sp.y; }
+          }
+          const mx = (p1.x + ex) / 2;
+          return (
+            <g>
+              {/* Orthogonal routing: elbow line */}
+              <path d={`M${p1.x},${p1.y} C${p1.x},${mx} ${ex},${mx} ${ex},${ey}`}
+                fill="none" stroke="#38bdf8" strokeWidth="2" strokeDasharray="6,3"
+                markerEnd="url(#arrowhead)" />
+              {/* Source dot highlight */}
+              <circle cx={p1.x} cy={p1.y} r="5" fill="#38bdf8" stroke="#fff" strokeWidth="2" />
+            </g>
+          );
         })()}
 
         {/* Elements */}
@@ -706,16 +743,19 @@ function WireframeCanvas({
                 </>
               )}
 
-              {/* Connection dots on hover (4 sides) */}
-              {(isSel || isHov) && SIDES.map(side => {
+              {/* Connection dots — show on hover/select OR on all elements when drawing a connector */}
+              {(isSel || isHov || !!drawingConn) && SIDES.map(side => {
                 const pt = connPt(el, side);
+                const isSnap = snapTarget?.id === el.id && snapTarget?.side === side;
+                const isSource = drawingConn?.fromId === el.id && drawingConn?.fromSide === side;
+                if (drawingConn && isSource) return null; // hide source dot while dragging
                 return (
-                  <circle key={side} cx={pt.x} cy={pt.y} r="7"
-                    fill={drawingConnRef.current ? "#22d3ee" : "#38bdf8"}
-                    stroke="#0f172a" strokeWidth="2"
-                    style={{ cursor: "crosshair" }}
-                    data-connid={el.id}
-                    data-connside={side}
+                  <circle key={side} cx={pt.x} cy={pt.y}
+                    r={isSnap ? 9 : 7}
+                    fill={isSnap ? "#22c55e" : "#38bdf8"}
+                    stroke={isSnap ? "#fff" : "#0f172a"}
+                    strokeWidth={isSnap ? 2.5 : 2}
+                    style={{ cursor: "crosshair", transition: "r 0.1s, fill 0.1s" }}
                     onMouseDown={ev => {
                       ev.stopPropagation();
                       const { x, y } = toSVG(ev);
