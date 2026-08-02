@@ -61,7 +61,7 @@ export default function DocumentHeader({
 
   const handleExport = (fmt: string) => {
     if (!doc?.id) return;
-    const token = JSON.parse(localStorage.getItem("origin-auth") || "{}").state?.accessToken;
+    const token = JSON.parse(localStorage.getItem("payme-auth") || "{}").state?.accessToken;
     const a = document.createElement("a");
     a.href = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}/documents/${doc.id}/export/?format=${fmt}`;
     a.setAttribute("download", "");
