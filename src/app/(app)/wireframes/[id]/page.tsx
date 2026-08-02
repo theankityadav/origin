@@ -38,6 +38,10 @@ interface WireframeElement {
   // Appearance
   opacity?: number;
   shadow?: boolean;
+  // Table cell data [row][col] and dimensions
+  cells?: string[][];
+  tableRows?: number;
+  tableCols?: number;
 }
 
 interface Connector {
@@ -81,8 +85,8 @@ const SHAPE_CATEGORIES: { label: string; shapes: ShapeDef[] }[] = [
       S("cross",       "Cross",          80,  80,  (w,h,c,f) => `<path d="M${w/3},0 H${w*2/3} V${h/3} H${w} V${h*2/3} H${w*2/3} V${h} H${w/3} V${h*2/3} H0 V${h/3} H${w/3} Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
       S("cylinder",    "Cylinder",       80, 100,  (w,h,c,f) => `<ellipse cx="${w/2}" cy="12" rx="${w/2-1}" ry="10" fill="${f}" stroke="${c}" stroke-width="1.5"/><rect x="1" y="12" width="${w-2}" height="${h-22}" fill="${f}" stroke="${c}" stroke-width="0"/><line x1="1" y1="12" x2="1" y2="${h-10}" stroke="${c}" stroke-width="1.5"/><line x1="${w-1}" y1="12" x2="${w-1}" y2="${h-10}" stroke="${c}" stroke-width="1.5"/><ellipse cx="${w/2}" cy="${h-10}" rx="${w/2-1}" ry="10" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
       S("cloud",       "Cloud",          120, 80,  (w,h,c,f) => `<path d="M${w*0.3},${h*0.7} C${w*0.05},${h*0.7} ${w*0.05},${h*0.35} ${w*0.25},${h*0.3} C${w*0.2},${h*0.05} ${w*0.55},${h*0.0} ${w*0.6},${h*0.2} C${w*0.65},${h*0.05} ${w*0.9},${h*0.05} ${w*0.9},${h*0.3} C${w*1.0},${h*0.3} ${w*1.0},${h*0.7} ${w*0.7},${h*0.7} Z" fill="${f}" stroke="${c}" stroke-width="1.5"/>`),
-      S("text",        "Text",           120, 40,  (w,h,c,_) => `<text x="${w/2}" y="${h/2+5}" text-anchor="middle" font-size="14" fill="${c}" font-family="Inter,sans-serif">Text</text>`),
-      S("sticky",      "Sticky Note",    120, 100, (w,h,_,__) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="3" fill="#fef08a" stroke="#ca8a04" stroke-width="1.5"/><text x="${w/2}" y="${h/2+5}" text-anchor="middle" font-size="12" fill="#713f12" font-family="Inter,sans-serif">Note</text>`),
+      S("text",        "Text",           140, 50,  (w,h,c,_) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="2" fill="none" stroke="${c}" stroke-width="1" stroke-dasharray="4,3" opacity="0.6"/>`),
+      S("sticky",      "Sticky Note",    160, 130, (w,h,_,__) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="6" fill="#fef08a" stroke="#ca8a04" stroke-width="1.5"/><line x1="1" y1="28" x2="${w-1}" y2="28" stroke="#ca8a04" stroke-width="1" opacity="0.35"/>`),
       S("image-box",   "Image Box",      120, 90,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="4" fill="${f}" stroke="${c}" stroke-width="1.5"/><line x1="1" y1="1" x2="${w-1}" y2="${h-1}" stroke="${c}" stroke-width="1" opacity="0.4"/><line x1="${w-1}" y1="1" x2="1" y2="${h-1}" stroke="${c}" stroke-width="1" opacity="0.4"/>`),
     ],
   },
@@ -108,9 +112,9 @@ const SHAPE_CATEGORIES: { label: string; shapes: ShapeDef[] }[] = [
   {
     label: "Advanced",
     shapes: [
-      S("swimlane-h",  "Swimlane H",     200, 100, (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="1.5"/><line x1="1" y1="25" x2="${w-1}" y2="25" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="17" text-anchor="middle" font-size="11" fill="${c}" font-family="Inter,sans-serif">Lane Title</text>`),
-      S("swimlane-v",  "Swimlane V",     100, 200, (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="1.5"/><line x1="25" y1="1" x2="25" y2="${h-1}" stroke="${c}" stroke-width="1.5"/><text x="13" y="${h/2}" text-anchor="middle" font-size="10" fill="${c}" transform="rotate(-90,13,${h/2})" font-family="Inter,sans-serif">Lane</text>`),
-      S("table",       "Table",          160, 120, (w,h,c,f) => { const rows=4,cols=3,cw=w/cols,rh=h/rows; return `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="1.5"/>${Array.from({length:rows-1},(_,i)=>`<line x1="1" y1="${(i+1)*rh}" x2="${w-1}" y2="${(i+1)*rh}" stroke="${c}" stroke-width="1"/>`).join("")}${Array.from({length:cols-1},(_,i)=>`<line x1="${(i+1)*cw}" y1="1" x2="${(i+1)*cw}" y2="${h-1}" stroke="${c}" stroke-width="1"/>`).join("")}<rect x="1" y="1" width="${w-2}" height="${rh}" fill="${c}" fill-opacity="0.15" stroke="none"/>`; }),
+      S("swimlane-h",  "Swimlane H",     200, 120, (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="1.5"/><rect x="1" y="1" width="${w-2}" height="28" fill="${c}" fill-opacity="0.15" stroke="none"/><line x1="1" y1="29" x2="${w-1}" y2="29" stroke="${c}" stroke-width="1.5"/>`),
+      S("swimlane-v",  "Swimlane V",     120, 200, (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="1.5"/><rect x="1" y="1" width="28" height="${h-2}" fill="${c}" fill-opacity="0.15" stroke="none"/><line x1="29" y1="1" x2="29" y2="${h-1}" stroke="${c}" stroke-width="1.5"/>`),
+      S("table",       "Table",          180, 140, (w,h,c,f) => { const rows=4,cols=3,cw=w/cols,rh=h/rows; return `<rect x="1" y="1" width="${w-2}" height="${h-2}" fill="${f}" stroke="${c}" stroke-width="1.5"/>${Array.from({length:rows-1},(_,i)=>`<line x1="1" y1="${(i+1)*rh}" x2="${w-1}" y2="${(i+1)*rh}" stroke="${c}" stroke-width="1"/>`).join("")}${Array.from({length:cols-1},(_,i)=>`<line x1="${(i+1)*cw}" y1="1" x2="${(i+1)*cw}" y2="${h-1}" stroke="${c}" stroke-width="1"/>`).join("")}<rect x="1" y="1" width="${w-2}" height="${rh}" fill="${c}" fill-opacity="0.2" stroke="none"/>`; }),
       S("list-item",   "List Item",      160, 40,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="2" fill="${f}" stroke="${c}" stroke-width="1.5"/><circle cx="16" cy="${h/2}" r="4" fill="${c}" fill-opacity="0.4" stroke="none"/><line x1="28" y1="${h/2}" x2="${w-10}" y2="${h/2}" stroke="${c}" stroke-width="1" opacity="0.5"/>`),
       S("input-field", "Input Field",    160, 36,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="4" fill="${f}" stroke="${c}" stroke-width="1.5"/><text x="10" y="${h/2+4}" font-size="11" fill="${c}" fill-opacity="0.45" font-family="Inter,sans-serif">Placeholder...</text>`),
       S("button",      "Button",         100, 36,  (w,h,c,f) => `<rect x="1" y="1" width="${w-2}" height="${h-2}" rx="6" fill="${c}" fill-opacity="0.2" stroke="${c}" stroke-width="1.5"/><text x="${w/2}" y="${h/2+4}" text-anchor="middle" font-size="12" fill="${c}" font-weight="600" font-family="Inter,sans-serif">Button</text>`),
@@ -613,7 +617,25 @@ function WireframeCanvas({
   };
   const commitEdit = () => {
     if (!editingId) return;
-    setElements(prev => prev.map(el => el.id === editingId ? { ...el, label: editText } : el));
+    if (editingId.includes("__")) {
+      // Table cell: format is `elId__row__col`
+      const [elId, rowStr, colStr] = editingId.split("__");
+      const r = parseInt(rowStr), c = parseInt(colStr);
+      setElements(prev => prev.map(el => {
+        if (el.id !== elId) return el;
+        const rows = el.tableRows ?? 4;
+        const cols = el.tableCols ?? 3;
+        const cells: string[][] = el.cells
+          ? el.cells.map(row => [...row])
+          : Array.from({ length: rows }, () => Array(cols).fill(""));
+        while (cells.length <= r) cells.push(Array(cols).fill(""));
+        while (cells[r].length <= c) cells[r].push("");
+        cells[r][c] = editText;
+        return { ...el, cells };
+      }));
+    } else {
+      setElements(prev => prev.map(el => el.id === editingId ? { ...el, label: editText } : el));
+    }
     setEditingId(null);
   };
 
@@ -759,8 +781,95 @@ function WireframeCanvas({
               <svg x={el.x} y={el.y} width={el.width} height={el.height} overflow="visible"
                 dangerouslySetInnerHTML={{ __html: def.render(el.width, el.height, color, fill) }} />
 
-              {/* Label overlay */}
-              {el.label && editingId !== el.id && (
+              {/* ── TABLE: render per-cell text with double-click editing ── */}
+              {el.shape === "table" && (() => {
+                const rows = el.tableRows ?? 4;
+                const cols = el.tableCols ?? 3;
+                const cw = el.width / cols;
+                const rh = el.height / rows;
+                return (
+                  <g>
+                    {Array.from({ length: rows }, (_, r) =>
+                      Array.from({ length: cols }, (_, c) => {
+                        const cellText = el.cells?.[r]?.[c] ?? "";
+                        const cellKey = `${r}-${c}`;
+                        const isEditingCell = editingId === `${el.id}__${r}__${c}`;
+                        const cellX = el.x + c * cw;
+                        const cellY = el.y + r * rh;
+                        return (
+                          <g key={cellKey}>
+                            {/* Invisible click zone per cell */}
+                            <rect x={cellX + 1} y={cellY + 1} width={cw - 2} height={rh - 2}
+                              fill="transparent"
+                              onDoubleClick={ev => {
+                                ev.stopPropagation();
+                                setEditingId(`${el.id}__${r}__${c}`);
+                                setEditText(cellText);
+                              }} />
+                            {!isEditingCell && cellText && (
+                              <text x={cellX + cw / 2} y={cellY + rh / 2 + 1}
+                                textAnchor="middle" dominantBaseline="middle"
+                                fontSize={el.fontSize ?? 11}
+                                fill={el.textColor ?? color}
+                                fontFamily={el.fontFamily ?? "Inter,sans-serif"}
+                                style={{ pointerEvents: "none", userSelect: "none" }}>
+                                {cellText}
+                              </text>
+                            )}
+                          </g>
+                        );
+                      })
+                    )}
+                  </g>
+                );
+              })()}
+
+              {/* ── SWIMLANE-H: editable title in header band ── */}
+              {el.shape === "swimlane-h" && editingId !== el.id && (
+                <text x={cx} y={el.y + 15}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={el.fontSize ?? 11} fill={el.textColor ?? color}
+                  fontFamily={el.fontFamily ?? "Inter,sans-serif"}
+                  fontWeight="600"
+                  style={{ pointerEvents: "none", userSelect: "none" }}>
+                  {el.label || "Lane Title"}
+                </text>
+              )}
+
+              {/* ── SWIMLANE-V: rotated title in left header band ── */}
+              {el.shape === "swimlane-v" && editingId !== el.id && (
+                <text x={el.x + 14} y={cy}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={el.fontSize ?? 11} fill={el.textColor ?? color}
+                  fontFamily={el.fontFamily ?? "Inter,sans-serif"}
+                  fontWeight="600"
+                  transform={`rotate(-90,${el.x + 14},${cy})`}
+                  style={{ pointerEvents: "none", userSelect: "none" }}>
+                  {el.label || "Lane"}
+                </text>
+              )}
+
+              {/* ── STICKY NOTE: text below header line ── */}
+              {el.shape === "sticky" && editingId !== el.id && (
+                <foreignObject x={el.x + 6} y={el.y + 34} width={el.width - 12} height={el.height - 40}>
+                  <div
+                    style={{
+                      fontSize: `${el.fontSize ?? 12}px`,
+                      color: el.textColor ?? "#713f12",
+                      fontFamily: el.fontFamily ?? "Inter,sans-serif",
+                      wordBreak: "break-word",
+                      whiteSpace: "pre-wrap",
+                      lineHeight: 1.4,
+                      pointerEvents: "none",
+                      userSelect: "none",
+                    }}>
+                    {el.label || "Note"}
+                  </div>
+                </foreignObject>
+              )}
+
+              {/* ── DEFAULT LABEL: all other shapes ── */}
+              {!["table", "swimlane-h", "swimlane-v", "sticky"].includes(el.shape) && el.label && editingId !== el.id && (
                 <text
                   x={el.textAlign === "left" ? el.x + 6 : el.textAlign === "right" ? el.x + el.width - 6 : cx}
                   y={cy + 4}
@@ -832,9 +941,59 @@ function WireframeCanvas({
 
       {/* Inline text editor */}
       {editingId && (() => {
+        // Table cell: editingId = "elId__row__col"
+        if (editingId.includes("__")) {
+          const [elId, rowStr, colStr] = editingId.split("__");
+          const el = elements.find(e => e.id === elId);
+          if (!el) return null;
+          const rows = el.tableRows ?? 4, cols = el.tableCols ?? 3;
+          const cw = el.width / cols, rh = el.height / rows;
+          const r = parseInt(rowStr), c = parseInt(colStr);
+          const cellX = el.x + c * cw, cellY = el.y + r * rh;
+          return (
+            <div style={{ position: "absolute", left: cellX + 1, top: cellY + 1, width: cw - 2, height: rh - 2, zIndex: 50 }}>
+              <input autoFocus value={editText}
+                onChange={e => setEditText(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") commitEdit(); }}
+                className="w-full h-full text-center text-xs outline-none"
+                style={{
+                  background: "rgba(15,23,42,0.92)", color: "#f8fafc",
+                  border: "1.5px solid #38bdf8", padding: "0 4px",
+                }} />
+            </div>
+          );
+        }
+        // Sticky: textarea positioned in the note body
         const el = elements.find(e => e.id === editingId);
         if (!el) return null;
         const rot = el.rotation ?? 0;
+        if (el.shape === "sticky") {
+          return (
+            <div style={{ position: "absolute", left: el.x + 6, top: el.y + 34, width: el.width - 12, height: el.height - 40, zIndex: 50 }}>
+              <textarea autoFocus value={editText}
+                onChange={e => setEditText(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={e => { if (e.key === "Escape") commitEdit(); }}
+                className="w-full h-full resize-none text-xs outline-none rounded"
+                style={{ background: "rgba(254,240,138,0.95)", color: "#713f12", border: "1.5px solid #ca8a04", padding: 4 }} />
+            </div>
+          );
+        }
+        // Swimlane header
+        if (el.shape === "swimlane-h") {
+          return (
+            <div style={{ position: "absolute", left: el.x, top: el.y + 2, width: el.width, height: 26, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <input autoFocus value={editText}
+                onChange={e => setEditText(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") commitEdit(); }}
+                className="text-center text-xs outline-none rounded px-2"
+                style={{ background: "rgba(15,23,42,0.92)", color: "#f8fafc", border: "1.5px solid #f59e0b", width: "60%", height: 20 }} />
+            </div>
+          );
+        }
+        // Default: centered input over shape
         return (
           <div style={{
             position: "absolute",
