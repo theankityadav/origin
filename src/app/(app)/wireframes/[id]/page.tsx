@@ -21,6 +21,16 @@ interface WireframeElement {
   height: number;
   color?: string;
   fill?: string;
+  rotation?: number;   // degrees
+  label?: string;      // editable text overlay
+}
+
+interface Connector {
+  id: string;
+  fromId: string;
+  fromSide: "top" | "right" | "bottom" | "left";
+  toId: string;
+  toSide: "top" | "right" | "bottom" | "left";
 }
 
 /* ── Shape Library ── */
@@ -201,9 +211,19 @@ function ShapesPanel({ onSelect, activeShapeId }: { onSelect: (s: ShapeDef) => v
   );
 }
 
+/* ── Helper: get connection point coords for a side ── */
+function connPt(el: WireframeElement, side: "top"|"right"|"bottom"|"left") {
+  const cx = el.x + el.width / 2, cy = el.y + el.height / 2;
+  if (side === "top")    return { x: cx, y: el.y };
+  if (side === "bottom") return { x: cx, y: el.y + el.height };
+  if (side === "left")   return { x: el.x, y: cy };
+  return { x: el.x + el.width, y: cy };
+}
+
 /* ── SVG Canvas ── */
 function WireframeCanvas({
   elements, setElements, selectedId, setSelectedId, activeShape, onPlaced,
+  connectors, setConnectors,
 }: {
   elements: WireframeElement[];
   setElements: React.Dispatch<React.SetStateAction<WireframeElement[]>>;
@@ -211,10 +231,17 @@ function WireframeCanvas({
   setSelectedId: (id: string | null) => void;
   activeShape: ShapeDef | null;
   onPlaced: () => void;
+  connectors: Connector[];
+  setConnectors: React.Dispatch<React.SetStateAction<Connector[]>>;
 }) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const [drag, setDrag] = useState<{ id: string; ox: number; oy: number } | null>(null);
+  const [drag, setDrag]           = useState<{ id: string; ox: number; oy: number } | null>(null);
   const [resizeState, setResizeState] = useState<{ id: string; sw: number; sh: number; mx: number; my: number } | null>(null);
+  const [rotateState, setRotateState] = useState<{ id: string; cx: number; cy: number; startAngle: number; startRot: number } | null>(null);
+  const [hoverId, setHoverId]     = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText]   = useState("");
+  const [drawingConn, setDrawingConn] = useState<{ fromId: string; fromSide: "top"|"right"|"bottom"|"left"; mx: number; my: number } | null>(null);
 
   const toSVG = useCallback((e: React.MouseEvent) => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -222,15 +249,16 @@ function WireframeCanvas({
   }, []);
 
   const onCanvasClick = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (editingId) return;
     const tag = (e.target as SVGElement).tagName;
-    if (tag === "svg" || tag === "circle") setSelectedId(null);
+    if (tag === "svg" || tag === "rect" && (e.target as SVGElement).getAttribute("fill") === "url(#dotgrid)") setSelectedId(null);
     if (activeShape) {
       const { x, y } = toSVG(e);
       const el: WireframeElement = {
         id: uid(), shape: activeShape.id,
         x: x - activeShape.defaultW / 2, y: y - activeShape.defaultH / 2,
         width: activeShape.defaultW, height: activeShape.defaultH,
-        color: "#6366f1", fill: "transparent",
+        color: "#6366f1", fill: "transparent", rotation: 0, label: "",
       };
       setElements(prev => [...prev, el]);
       setSelectedId(el.id);
@@ -240,12 +268,38 @@ function WireframeCanvas({
 
   const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const { x, y } = toSVG(e);
-    if (drag) setElements(prev => prev.map(el => el.id === drag.id ? { ...el, x: x - drag.ox, y: y - drag.oy } : el));
-    if (resizeState) setElements(prev => prev.map(el => el.id === resizeState.id
-      ? { ...el, width: Math.max(20, resizeState.sw + x - resizeState.mx), height: Math.max(10, resizeState.sh + y - resizeState.my) }
-      : el));
+    if (drag) {
+      setElements(prev => prev.map(el => el.id === drag.id ? { ...el, x: x - drag.ox, y: y - drag.oy } : el));
+    }
+    if (resizeState) {
+      setElements(prev => prev.map(el => el.id === resizeState.id
+        ? { ...el, width: Math.max(20, resizeState.sw + x - resizeState.mx), height: Math.max(10, resizeState.sh + y - resizeState.my) }
+        : el));
+    }
+    if (rotateState) {
+      const dx = x - rotateState.cx, dy = y - rotateState.cy;
+      const angle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+      const delta = angle - rotateState.startAngle;
+      setElements(prev => prev.map(el => el.id === rotateState.id
+        ? { ...el, rotation: ((rotateState.startRot + delta) % 360 + 360) % 360 }
+        : el));
+    }
+    if (drawingConn) setDrawingConn(dc => dc ? { ...dc, mx: x, my: y } : null);
   };
 
+  const onMouseUp = () => { setDrag(null); setResizeState(null); setRotateState(null); setDrawingConn(null); };
+
+  const startEdit = (el: WireframeElement) => {
+    setEditingId(el.id);
+    setEditText(el.label ?? "");
+  };
+  const commitEdit = () => {
+    if (!editingId) return;
+    setElements(prev => prev.map(el => el.id === editingId ? { ...el, label: editText } : el));
+    setEditingId(null);
+  };
+
+  const SIDES: ("top"|"right"|"bottom"|"left")[] = ["top","right","bottom","left"];
   const allShapes = SHAPE_CATEGORIES.flatMap(c => c.shapes);
   const selected = elements.find(el => el.id === selectedId);
 
@@ -255,44 +309,185 @@ function WireframeCanvas({
         style={{ display: "block", cursor: activeShape ? "crosshair" : "default" }}
         onClick={onCanvasClick}
         onMouseMove={onMouseMove}
-        onMouseUp={() => { setDrag(null); setResizeState(null); }}
-        onMouseLeave={() => { setDrag(null); setResizeState(null); }}>
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}>
+
         <defs>
           <pattern id="dotgrid" width="20" height="20" patternUnits="userSpaceOnUse">
             <circle cx="1" cy="1" r="0.6" fill="rgba(128,128,128,0.2)" />
           </pattern>
+          <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 Z" fill="#38bdf8" />
+          </marker>
         </defs>
+
         <rect width="100%" height="100%" fill="url(#dotgrid)" />
+
+        {/* Connector lines */}
+        {connectors.map(conn => {
+          const from = elements.find(e => e.id === conn.fromId);
+          const to   = elements.find(e => e.id === conn.toId);
+          if (!from || !to) return null;
+          const p1 = connPt(from, conn.fromSide);
+          const p2 = connPt(to, conn.toSide);
+          const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+          return (
+            <g key={conn.id}>
+              <path d={`M${p1.x},${p1.y} C${p1.x},${my} ${p2.x},${my} ${p2.x},${p2.y}`}
+                fill="none" stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="5,3"
+                markerEnd="url(#arrowhead)" />
+            </g>
+          );
+        })}
+
+        {/* In-progress connector being drawn */}
+        {drawingConn && (() => {
+          const from = elements.find(e => e.id === drawingConn.fromId);
+          if (!from) return null;
+          const p1 = connPt(from, drawingConn.fromSide);
+          return <line x1={p1.x} y1={p1.y} x2={drawingConn.mx} y2={drawingConn.my}
+            stroke="#38bdf8" strokeWidth="1.5" strokeDasharray="4,3" />;
+        })()}
+
+        {/* Elements */}
         {elements.map(el => {
           const def = allShapes.find(s => s.id === el.shape);
           if (!def) return null;
           const color = el.color ?? "#6366f1";
-          const fill = el.fill ?? "transparent";
+          const fill  = el.fill ?? "transparent";
           const isSel = el.id === selectedId;
+          const isHov = el.id === hoverId;
+          const rot   = el.rotation ?? 0;
+          const cx    = el.x + el.width / 2;
+          const cy    = el.y + el.height / 2;
+
           return (
-            <g key={el.id} transform={`translate(${el.x},${el.y})`}
+            <g key={el.id}
+              transform={`rotate(${rot},${cx},${cy})`}
               style={{ cursor: drag?.id === el.id ? "grabbing" : "grab" }}
-              onMouseDown={ev => { ev.stopPropagation(); const { x, y } = toSVG(ev); setDrag({ id: el.id, ox: x - el.x, oy: y - el.y }); setSelectedId(el.id); }}
+              onMouseEnter={() => setHoverId(el.id)}
+              onMouseLeave={() => setHoverId(null)}
+              onMouseDown={ev => {
+                if (ev.target instanceof SVGElement && ev.target.dataset.role === "conn") return;
+                ev.stopPropagation();
+                const { x, y } = toSVG(ev);
+                setDrag({ id: el.id, ox: x - el.x, oy: y - el.y });
+                setSelectedId(el.id);
+              }}
+              onDoubleClick={ev => { ev.stopPropagation(); startEdit(el); }}
               onClick={ev => { ev.stopPropagation(); setSelectedId(el.id); }}>
-              <svg width={el.width} height={el.height} overflow="visible"
+
+              {/* Shape SVG */}
+              <svg x={el.x} y={el.y} width={el.width} height={el.height} overflow="visible"
                 dangerouslySetInnerHTML={{ __html: def.render(el.width, el.height, color, fill) }} />
+
+              {/* Label overlay */}
+              {el.label && editingId !== el.id && (
+                <text x={cx} y={cy + 4} textAnchor="middle" dominantBaseline="middle"
+                  fontSize="12" fill={color} fontFamily="Inter,sans-serif"
+                  style={{ pointerEvents: "none", userSelect: "none" }}>
+                  {el.label}
+                </text>
+              )}
+
+              {/* Selection ring + resize + rotate */}
               {isSel && (
                 <>
-                  <rect x="-4" y="-4" width={el.width + 8} height={el.height + 8}
+                  <rect x={el.x - 4} y={el.y - 4} width={el.width + 8} height={el.height + 8}
                     fill="none" stroke="#f59e0b" strokeWidth="1.5" strokeDasharray="4 3" rx="3" />
-                  <rect x={el.width - 5} y={el.height - 5} width="10" height="10" rx="2"
+                  {/* SE resize */}
+                  <rect x={el.x + el.width - 5} y={el.y + el.height - 5} width="10" height="10" rx="2"
                     fill="white" stroke="#f59e0b" strokeWidth="1.5" style={{ cursor: "se-resize" }}
                     onMouseDown={ev => { ev.stopPropagation(); const { x, y } = toSVG(ev); setResizeState({ id: el.id, sw: el.width, sh: el.height, mx: x, my: y }); }} />
+                  {/* Rotate handle */}
+                  <line x1={cx} y1={el.y - 4} x2={cx} y2={el.y - 22} stroke="#f59e0b" strokeWidth="1.5" />
+                  <circle cx={cx} cy={el.y - 26} r="7"
+                    fill="#1e293b" stroke="#f59e0b" strokeWidth="1.5" style={{ cursor: "grab" }}
+                    onMouseDown={ev => {
+                      ev.stopPropagation();
+                      const { x, y } = toSVG(ev);
+                      const dx = x - cx, dy = y - cy;
+                      const startAngle = Math.atan2(dy, dx) * (180 / Math.PI) + 90;
+                      setRotateState({ id: el.id, cx, cy, startAngle, startRot: rot });
+                    }} />
+                  {/* Rotation icon inside handle */}
+                  <text x={cx} y={el.y - 22} textAnchor="middle" fontSize="9" fill="#f59e0b" style={{ pointerEvents: "none" }}>↻</text>
                 </>
               )}
+
+              {/* Connection dots on hover (4 sides) */}
+              {(isSel || isHov) && SIDES.map(side => {
+                const pt = connPt(el, side);
+                return (
+                  <circle key={side} cx={pt.x} cy={pt.y} r="6"
+                    fill="#38bdf8" stroke="#0f172a" strokeWidth="1.5"
+                    style={{ cursor: "crosshair" }}
+                    data-role="conn"
+                    onMouseDown={ev => {
+                      ev.stopPropagation();
+                      const { x, y } = toSVG(ev);
+                      setDrawingConn({ fromId: el.id, fromSide: side, mx: x, my: y });
+                    }}
+                    onMouseUp={ev => {
+                      ev.stopPropagation();
+                      if (drawingConn && drawingConn.fromId !== el.id) {
+                        setConnectors(prev => [...prev, {
+                          id: uid(), fromId: drawingConn.fromId, fromSide: drawingConn.fromSide,
+                          toId: el.id, toSide: side,
+                        }]);
+                        setDrawingConn(null);
+                      }
+                    }}
+                  />
+                );
+              })}
             </g>
           );
         })}
       </svg>
-      {selected && (
+
+      {/* Inline text editor */}
+      {editingId && (() => {
+        const el = elements.find(e => e.id === editingId);
+        if (!el) return null;
+        const rot = el.rotation ?? 0;
+        return (
+          <div style={{
+            position: "absolute",
+            left: el.x + el.width / 2,
+            top: el.y + el.height / 2,
+            transform: `translate(-50%,-50%) rotate(${rot}deg)`,
+            zIndex: 50,
+          }}>
+            <input autoFocus value={editText}
+              onChange={e => setEditText(e.target.value)}
+              onBlur={commitEdit}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === "Escape") commitEdit(); }}
+              className="text-center text-sm outline-none rounded px-2 py-1"
+              style={{
+                background: "rgba(15,23,42,0.85)", color: "#f8fafc",
+                border: "1px solid #f59e0b", minWidth: 80, maxWidth: el.width,
+              }} />
+          </div>
+        );
+      })()}
+
+      {/* Properties panel */}
+      {selected && !editingId && (
         <div className="absolute top-3 right-3 rounded-xl shadow-xl p-3 space-y-2.5 w-52"
           style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
           <p className="text-[10px] font-bold tracking-wide uppercase" style={{ color: "var(--text-3)" }}>{selected.shape}</p>
+
+          {/* Label */}
+          <label className="flex flex-col gap-0.5 text-xs">
+            <span style={{ color: "var(--text-3)" }}>Label (double-click to edit)</span>
+            <input value={selected.label ?? ""} placeholder="Add text…"
+              onChange={e => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, label: e.target.value } : el))}
+              className="rounded px-1.5 py-1 outline-none w-full text-xs"
+              style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text)" }} />
+          </label>
+
+          {/* Position / size */}
           <div className="grid grid-cols-2 gap-1.5 text-xs">
             {(["x", "y", "width", "height"] as const).map(k => (
               <label key={k} className="flex flex-col gap-0.5">
@@ -304,6 +499,16 @@ function WireframeCanvas({
               </label>
             ))}
           </div>
+
+          {/* Rotation */}
+          <label className="flex flex-col gap-0.5 text-xs">
+            <span style={{ color: "var(--text-3)" }}>Rotation: {Math.round(selected.rotation ?? 0)}°</span>
+            <input type="range" min="0" max="359" value={Math.round(selected.rotation ?? 0)}
+              onChange={e => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, rotation: +e.target.value } : el))}
+              className="w-full" />
+          </label>
+
+          {/* Colors */}
           <div className="grid grid-cols-2 gap-1.5 text-xs">
             <label className="flex flex-col gap-0.5">
               <span style={{ color: "var(--text-3)" }}>Stroke</span>
@@ -318,6 +523,7 @@ function WireframeCanvas({
                 className="w-full h-7 rounded cursor-pointer" />
             </label>
           </div>
+
           <button onClick={() => { setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}
             className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium"
             style={{ background: "rgba(239,68,68,0.1)", color: "#dc2626" }}>
@@ -334,6 +540,7 @@ export default function WireframeEditorPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
   const [elements, setElements] = useState<WireframeElement[]>([]);
+  const [connectors, setConnectors] = useState<Connector[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [activeShape, setActiveShape] = useState<ShapeDef | null>(null);
   const [visOpen, setVisOpen] = useState(false);
@@ -367,13 +574,14 @@ export default function WireframeEditorPage() {
   useEffect(() => {
     if (doc?.content?.elements) {
       setElements(doc.content.elements);
+      setConnectors(doc.content.connectors ?? []);
       history.current = [];
       future.current = [];
     }
   }, [doc]);
 
   const save = useMutation({
-    mutationFn: () => api.patch(`/documents/${id}/`, { content: { type: "wireframe", elements } }),
+    mutationFn: () => api.patch(`/documents/${id}/`, { content: { type: "wireframe", elements, connectors } }),
     onSuccess: () => { toast.success("Saved"); qc.invalidateQueries({ queryKey: ["wireframe", id] }); },
     onError: () => toast.error("Failed to save"),
   });
@@ -506,6 +714,8 @@ export default function WireframeEditorPage() {
           setSelectedId={setSelectedId}
           activeShape={activeShape}
           onPlaced={() => setActiveShape(null)}
+          connectors={connectors}
+          setConnectors={setConnectors}
         />
       </div>
     </div>
