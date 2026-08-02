@@ -493,6 +493,7 @@ function WireframeCanvas({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText]   = useState("");
   const [drawingConn, setDrawingConn] = useState<{ fromId: string; fromSide: "top"|"right"|"bottom"|"left"; mx: number; my: number } | null>(null);
+  const drawingConnRef = useRef<{ fromId: string; fromSide: "top"|"right"|"bottom"|"left"; mx: number; my: number } | null>(null);
 
   const toSVG = useCallback((e: React.MouseEvent) => {
     const r = svgRef.current!.getBoundingClientRect();
@@ -535,10 +536,37 @@ function WireframeCanvas({
         ? { ...el, rotation: ((rotateState.startRot + delta) % 360 + 360) % 360 }
         : el));
     }
-    if (drawingConn) setDrawingConn(dc => dc ? { ...dc, mx: x, my: y } : null);
+    if (drawingConnRef.current) {
+      const updated = { ...drawingConnRef.current, mx: x, my: y };
+      drawingConnRef.current = updated;
+      setDrawingConn(updated);
+    }
   };
 
-  const onMouseUp = () => { setDrag(null); setResizeState(null); setRotateState(null); setDrawingConn(null); };
+  const onMouseUp = (e?: React.MouseEvent) => {
+    // Complete connector if we were drawing one
+    if (drawingConnRef.current && e) {
+      const els = document.elementsFromPoint(e.clientX, e.clientY);
+      for (const el of els) {
+        const toId   = (el as HTMLElement).dataset?.connid;
+        const toSide = (el as HTMLElement).dataset?.connside as "top"|"right"|"bottom"|"left" | undefined;
+        if (toId && toSide && toId !== drawingConnRef.current.fromId) {
+          setConnectors(prev => [...prev, {
+            id: uid(),
+            fromId: drawingConnRef.current!.fromId,
+            fromSide: drawingConnRef.current!.fromSide,
+            toId, toSide,
+          }]);
+          break;
+        }
+      }
+    }
+    drawingConnRef.current = null;
+    setDrawingConn(null);
+    setDrag(null);
+    setResizeState(null);
+    setRotateState(null);
+  };
 
   const startEdit = (el: WireframeElement) => {
     setEditingId(el.id);
@@ -560,8 +588,8 @@ function WireframeCanvas({
         style={{ display: "block", cursor: activeShape ? "crosshair" : "default" }}
         onClick={onCanvasClick}
         onMouseMove={onMouseMove}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseUp}>
+        onMouseUp={e => onMouseUp(e)}
+        onMouseLeave={e => onMouseUp(e)}>
 
         <defs>
           <pattern id="dotgrid" width="20" height="20" patternUnits="userSpaceOnUse">
@@ -623,7 +651,6 @@ function WireframeCanvas({
               onMouseEnter={() => setHoverId(el.id)}
               onMouseLeave={() => setHoverId(null)}
               onMouseDown={ev => {
-                if (ev.target instanceof SVGElement && ev.target.dataset.role === "conn") return;
                 ev.stopPropagation();
                 const { x, y } = toSVG(ev);
                 setDrag({ id: el.id, ox: x - el.x, oy: y - el.y });
@@ -683,24 +710,18 @@ function WireframeCanvas({
               {(isSel || isHov) && SIDES.map(side => {
                 const pt = connPt(el, side);
                 return (
-                  <circle key={side} cx={pt.x} cy={pt.y} r="6"
-                    fill="#38bdf8" stroke="#0f172a" strokeWidth="1.5"
+                  <circle key={side} cx={pt.x} cy={pt.y} r="7"
+                    fill={drawingConnRef.current ? "#22d3ee" : "#38bdf8"}
+                    stroke="#0f172a" strokeWidth="2"
                     style={{ cursor: "crosshair" }}
-                    data-role="conn"
+                    data-connid={el.id}
+                    data-connside={side}
                     onMouseDown={ev => {
                       ev.stopPropagation();
                       const { x, y } = toSVG(ev);
-                      setDrawingConn({ fromId: el.id, fromSide: side, mx: x, my: y });
-                    }}
-                    onMouseUp={ev => {
-                      ev.stopPropagation();
-                      if (drawingConn && drawingConn.fromId !== el.id) {
-                        setConnectors(prev => [...prev, {
-                          id: uid(), fromId: drawingConn.fromId, fromSide: drawingConn.fromSide,
-                          toId: el.id, toSide: side,
-                        }]);
-                        setDrawingConn(null);
-                      }
+                      const dc = { fromId: el.id, fromSide: side, mx: x, my: y };
+                      drawingConnRef.current = dc;
+                      setDrawingConn(dc);
                     }}
                   />
                 );
