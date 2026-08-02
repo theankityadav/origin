@@ -21,8 +21,23 @@ interface WireframeElement {
   height: number;
   color?: string;
   fill?: string;
-  rotation?: number;   // degrees
-  label?: string;      // editable text overlay
+  rotation?: number;
+  label?: string;
+  // Text styling
+  fontSize?: number;
+  fontFamily?: string;
+  fontBold?: boolean;
+  fontItalic?: boolean;
+  fontUnderline?: boolean;
+  textAlign?: "left" | "center" | "right";
+  textColor?: string;
+  // Border
+  strokeWidth?: number;
+  strokeDash?: boolean;
+  borderRadius?: number;
+  // Appearance
+  opacity?: number;
+  shadow?: boolean;
 }
 
 interface Connector {
@@ -211,6 +226,242 @@ function ShapesPanel({ onSelect, activeShapeId }: { onSelect: (s: ShapeDef) => v
   );
 }
 
+/* ── Reusable small input ── */
+const NInput = ({ label, value, onChange, min, max, step = 1 }: { label: string; value: number; onChange: (v: number) => void; min?: number; max?: number; step?: number }) => (
+  <label className="flex flex-col gap-0.5 text-[10px]">
+    <span style={{ color: "var(--text-3)" }}>{label}</span>
+    <input type="number" min={min} max={max} step={step} value={value}
+      onChange={e => onChange(+e.target.value)}
+      className="rounded px-1.5 py-1 outline-none w-full"
+      style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text)", fontSize: 11 }} />
+  </label>
+);
+
+/* ── Properties Panel ── */
+function PropertiesPanel({ selected, selectedId, setElements, onDelete }: {
+  selected: WireframeElement;
+  selectedId: string;
+  setElements: React.Dispatch<React.SetStateAction<WireframeElement[]>>;
+  onDelete: () => void;
+}) {
+  const [tab, setTab] = useState<"style" | "text" | "arrange">("style");
+  const upd = (patch: Partial<WireframeElement>) =>
+    setElements(prev => prev.map(el => el.id === selectedId ? { ...el, ...patch } : el));
+
+  const FONTS = ["Inter", "Arial", "Helvetica", "Georgia", "Courier New", "Times New Roman", "Verdana", "Trebuchet MS"];
+
+  const tabBtn = (t: typeof tab, label: string) => (
+    <button onClick={() => setTab(t)}
+      className="flex-1 py-1.5 text-[11px] font-semibold rounded-lg transition"
+      style={{
+        background: tab === t ? "var(--accent)" : "transparent",
+        color: tab === t ? "#fff" : "var(--text-3)",
+      }}>{label}</button>
+  );
+
+  return (
+    <div className="absolute top-3 right-3 rounded-xl shadow-xl overflow-hidden w-56"
+      style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
+
+      {/* Tab bar */}
+      <div className="flex gap-1 p-1.5" style={{ background: "var(--bg-subtle)", borderBottom: "1px solid var(--border)" }}>
+        {tabBtn("style", "Style")}
+        {tabBtn("text", "Text")}
+        {tabBtn("arrange", "Arrange")}
+      </div>
+
+      <div className="p-3 space-y-3 max-h-[80vh] overflow-y-auto">
+
+        {/* ── STYLE TAB ── */}
+        {tab === "style" && (
+          <>
+            {/* Fill & Stroke */}
+            <div>
+              <p className="text-[10px] font-bold uppercase mb-1.5" style={{ color: "var(--text-3)" }}>Fill & Stroke</p>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="flex flex-col gap-0.5 text-[10px]">
+                  <span style={{ color: "var(--text-3)" }}>Fill Color</span>
+                  <input type="color" value={!selected.fill || selected.fill === "transparent" ? "#1e293b" : selected.fill}
+                    onChange={e => upd({ fill: e.target.value })}
+                    className="w-full h-7 rounded cursor-pointer" />
+                </label>
+                <label className="flex flex-col gap-0.5 text-[10px]">
+                  <span style={{ color: "var(--text-3)" }}>Stroke Color</span>
+                  <input type="color" value={selected.color ?? "#6366f1"}
+                    onChange={e => upd({ color: e.target.value })}
+                    className="w-full h-7 rounded cursor-pointer" />
+                </label>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <NInput label="Stroke Width" value={selected.strokeWidth ?? 1.5} onChange={v => upd({ strokeWidth: v })} min={0} max={20} step={0.5} />
+                <NInput label="Border Radius" value={selected.borderRadius ?? 0} onChange={v => upd({ borderRadius: v })} min={0} max={100} />
+              </div>
+              <label className="flex items-center gap-2 mt-2 text-[11px] cursor-pointer" style={{ color: "var(--text-2)" }}>
+                <input type="checkbox" checked={!!selected.strokeDash} onChange={e => upd({ strokeDash: e.target.checked })} />
+                Dashed border
+              </label>
+            </div>
+
+            {/* Opacity */}
+            <div>
+              <p className="text-[10px] font-bold uppercase mb-1" style={{ color: "var(--text-3)" }}>Opacity: {selected.opacity ?? 100}%</p>
+              <input type="range" min={0} max={100} value={selected.opacity ?? 100}
+                onChange={e => upd({ opacity: +e.target.value })} className="w-full" />
+            </div>
+
+            {/* Shadow */}
+            <label className="flex items-center gap-2 text-[11px] cursor-pointer" style={{ color: "var(--text-2)" }}>
+              <input type="checkbox" checked={!!selected.shadow} onChange={e => upd({ shadow: e.target.checked })} />
+              Drop Shadow
+            </label>
+
+            {/* Clear fill */}
+            <button onClick={() => upd({ fill: "transparent" })}
+              className="w-full text-[11px] py-1.5 rounded-lg"
+              style={{ border: "1px solid var(--border)", color: "var(--text-3)" }}>
+              Clear Fill
+            </button>
+          </>
+        )}
+
+        {/* ── TEXT TAB ── */}
+        {tab === "text" && (
+          <>
+            {/* Label */}
+            <div>
+              <p className="text-[10px] font-bold uppercase mb-1.5" style={{ color: "var(--text-3)" }}>Label</p>
+              <textarea value={selected.label ?? ""} placeholder="Add text…" rows={2}
+                onChange={e => upd({ label: e.target.value })}
+                className="w-full rounded px-2 py-1.5 outline-none resize-none text-xs"
+                style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text)" }} />
+            </div>
+
+            {/* Font */}
+            <div>
+              <p className="text-[10px] font-bold uppercase mb-1.5" style={{ color: "var(--text-3)" }}>Font</p>
+              <select value={selected.fontFamily ?? "Inter"}
+                onChange={e => upd({ fontFamily: e.target.value })}
+                className="w-full rounded px-2 py-1.5 outline-none text-xs mb-2"
+                style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text)" }}>
+                {FONTS.map(f => <option key={f} value={f}>{f}</option>)}
+              </select>
+              <div className="grid grid-cols-2 gap-2">
+                <NInput label="Size (px)" value={selected.fontSize ?? 12} onChange={v => upd({ fontSize: v })} min={6} max={96} />
+                <label className="flex flex-col gap-0.5 text-[10px]">
+                  <span style={{ color: "var(--text-3)" }}>Text Color</span>
+                  <input type="color" value={selected.textColor ?? selected.color ?? "#6366f1"}
+                    onChange={e => upd({ textColor: e.target.value })}
+                    className="w-full h-7 rounded cursor-pointer" />
+                </label>
+              </div>
+            </div>
+
+            {/* Style toggles */}
+            <div>
+              <p className="text-[10px] font-bold uppercase mb-1.5" style={{ color: "var(--text-3)" }}>Style</p>
+              <div className="flex gap-1.5">
+                {([
+                  { key: "fontBold", label: "B", style: { fontWeight: "bold" } },
+                  { key: "fontItalic", label: "I", style: { fontStyle: "italic" } },
+                  { key: "fontUnderline", label: "U", style: { textDecoration: "underline" } },
+                ] as const).map(({ key, label, style }) => (
+                  <button key={key} onClick={() => upd({ [key]: !selected[key] })}
+                    className="w-8 h-7 rounded-lg text-xs font-semibold transition"
+                    style={{
+                      ...style,
+                      background: selected[key] ? "var(--accent)" : "var(--bg-subtle)",
+                      color: selected[key] ? "#fff" : "var(--text-2)",
+                      border: "1px solid var(--border)",
+                    }}>{label}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Alignment */}
+            <div>
+              <p className="text-[10px] font-bold uppercase mb-1.5" style={{ color: "var(--text-3)" }}>Alignment</p>
+              <div className="flex gap-1">
+                {(["left", "center", "right"] as const).map(a => (
+                  <button key={a} onClick={() => upd({ textAlign: a })}
+                    className="flex-1 py-1 rounded text-[10px] capitalize"
+                    style={{
+                      background: (selected.textAlign ?? "center") === a ? "var(--accent)" : "var(--bg-subtle)",
+                      color: (selected.textAlign ?? "center") === a ? "#fff" : "var(--text-3)",
+                      border: "1px solid var(--border)",
+                    }}>{a}</button>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── ARRANGE TAB ── */}
+        {tab === "arrange" && (
+          <>
+            {/* Position */}
+            <div>
+              <p className="text-[10px] font-bold uppercase mb-1.5" style={{ color: "var(--text-3)" }}>Position</p>
+              <div className="grid grid-cols-2 gap-2">
+                <NInput label="X" value={Math.round(selected.x)} onChange={v => upd({ x: v })} />
+                <NInput label="Y" value={Math.round(selected.y)} onChange={v => upd({ y: v })} />
+              </div>
+            </div>
+
+            {/* Size */}
+            <div>
+              <p className="text-[10px] font-bold uppercase mb-1.5" style={{ color: "var(--text-3)" }}>Size</p>
+              <div className="grid grid-cols-2 gap-2">
+                <NInput label="Width" value={Math.round(selected.width)} onChange={v => upd({ width: Math.max(10, v) })} min={10} />
+                <NInput label="Height" value={Math.round(selected.height)} onChange={v => upd({ height: Math.max(10, v) })} min={10} />
+              </div>
+            </div>
+
+            {/* Rotation */}
+            <div>
+              <p className="text-[10px] font-bold uppercase mb-1" style={{ color: "var(--text-3)" }}>Rotation: {Math.round(selected.rotation ?? 0)}°</p>
+              <input type="range" min={0} max={359} value={Math.round(selected.rotation ?? 0)}
+                onChange={e => upd({ rotation: +e.target.value })} className="w-full" />
+              <div className="flex gap-1.5 mt-1.5">
+                {[0, 90, 180, 270].map(deg => (
+                  <button key={deg} onClick={() => upd({ rotation: deg })}
+                    className="flex-1 py-1 rounded text-[10px]"
+                    style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+                    {deg}°
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Z-order placeholder */}
+            <div>
+              <p className="text-[10px] font-bold uppercase mb-1.5" style={{ color: "var(--text-3)" }}>Quick Actions</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button onClick={() => upd({ x: Math.round(selected.x / 10) * 10, y: Math.round(selected.y / 10) * 10 })}
+                  className="py-1.5 rounded text-[10px]"
+                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+                  Snap to Grid
+                </button>
+                <button onClick={() => upd({ rotation: 0 })}
+                  className="py-1.5 rounded text-[10px]"
+                  style={{ background: "var(--bg-subtle)", border: "1px solid var(--border)", color: "var(--text-3)" }}>
+                  Reset Rotation
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Delete always visible at bottom */}
+        <button onClick={onDelete}
+          className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium mt-1"
+          style={{ background: "rgba(239,68,68,0.1)", color: "#dc2626", border: "1px solid rgba(239,68,68,0.2)" }}>
+          <Trash2 className="w-3.5 h-3.5" /> Delete Shape
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Helper: get connection point coords for a side ── */
 function connPt(el: WireframeElement, side: "top"|"right"|"bottom"|"left") {
   const cx = el.x + el.width / 2, cy = el.y + el.height / 2;
@@ -364,7 +615,11 @@ function WireframeCanvas({
           return (
             <g key={el.id}
               transform={`rotate(${rot},${cx},${cy})`}
-              style={{ cursor: drag?.id === el.id ? "grabbing" : "grab" }}
+              style={{
+                cursor: drag?.id === el.id ? "grabbing" : "grab",
+                opacity: (el.opacity ?? 100) / 100,
+                filter: el.shadow ? "drop-shadow(2px 4px 6px rgba(0,0,0,0.5))" : undefined,
+              }}
               onMouseEnter={() => setHoverId(el.id)}
               onMouseLeave={() => setHoverId(null)}
               onMouseDown={ev => {
@@ -383,8 +638,17 @@ function WireframeCanvas({
 
               {/* Label overlay */}
               {el.label && editingId !== el.id && (
-                <text x={cx} y={cy + 4} textAnchor="middle" dominantBaseline="middle"
-                  fontSize="12" fill={color} fontFamily="Inter,sans-serif"
+                <text
+                  x={el.textAlign === "left" ? el.x + 6 : el.textAlign === "right" ? el.x + el.width - 6 : cx}
+                  y={cy + 4}
+                  textAnchor={el.textAlign === "left" ? "start" : el.textAlign === "right" ? "end" : "middle"}
+                  dominantBaseline="middle"
+                  fontSize={el.fontSize ?? 12}
+                  fill={el.textColor ?? color}
+                  fontFamily={el.fontFamily ?? "Inter,sans-serif"}
+                  fontWeight={el.fontBold ? "bold" : "normal"}
+                  fontStyle={el.fontItalic ? "italic" : "normal"}
+                  textDecoration={el.fontUnderline ? "underline" : "none"}
                   style={{ pointerEvents: "none", userSelect: "none" }}>
                   {el.label}
                 </text>
@@ -472,64 +736,14 @@ function WireframeCanvas({
         );
       })()}
 
-      {/* Properties panel */}
+      {/* ── Tabbed Properties Panel ── */}
       {selected && !editingId && (
-        <div className="absolute top-3 right-3 rounded-xl shadow-xl p-3 space-y-2.5 w-52"
-          style={{ background: "var(--bg-panel)", border: "1px solid var(--border)" }}>
-          <p className="text-[10px] font-bold tracking-wide uppercase" style={{ color: "var(--text-3)" }}>{selected.shape}</p>
-
-          {/* Label */}
-          <label className="flex flex-col gap-0.5 text-xs">
-            <span style={{ color: "var(--text-3)" }}>Label (double-click to edit)</span>
-            <input value={selected.label ?? ""} placeholder="Add text…"
-              onChange={e => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, label: e.target.value } : el))}
-              className="rounded px-1.5 py-1 outline-none w-full text-xs"
-              style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text)" }} />
-          </label>
-
-          {/* Position / size */}
-          <div className="grid grid-cols-2 gap-1.5 text-xs">
-            {(["x", "y", "width", "height"] as const).map(k => (
-              <label key={k} className="flex flex-col gap-0.5">
-                <span style={{ color: "var(--text-3)" }}>{k}</span>
-                <input type="number" value={Math.round(selected[k])}
-                  onChange={e => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, [k]: +e.target.value } : el))}
-                  className="rounded px-1.5 py-1 outline-none w-full text-xs"
-                  style={{ border: "1px solid var(--border)", background: "var(--bg-subtle)", color: "var(--text)" }} />
-              </label>
-            ))}
-          </div>
-
-          {/* Rotation */}
-          <label className="flex flex-col gap-0.5 text-xs">
-            <span style={{ color: "var(--text-3)" }}>Rotation: {Math.round(selected.rotation ?? 0)}°</span>
-            <input type="range" min="0" max="359" value={Math.round(selected.rotation ?? 0)}
-              onChange={e => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, rotation: +e.target.value } : el))}
-              className="w-full" />
-          </label>
-
-          {/* Colors */}
-          <div className="grid grid-cols-2 gap-1.5 text-xs">
-            <label className="flex flex-col gap-0.5">
-              <span style={{ color: "var(--text-3)" }}>Stroke</span>
-              <input type="color" value={selected.color ?? "#6366f1"}
-                onChange={e => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, color: e.target.value } : el))}
-                className="w-full h-7 rounded cursor-pointer" />
-            </label>
-            <label className="flex flex-col gap-0.5">
-              <span style={{ color: "var(--text-3)" }}>Fill</span>
-              <input type="color" value={!selected.fill || selected.fill === "transparent" ? "#ffffff" : selected.fill}
-                onChange={e => setElements(prev => prev.map(el => el.id === selectedId ? { ...el, fill: e.target.value } : el))}
-                className="w-full h-7 rounded cursor-pointer" />
-            </label>
-          </div>
-
-          <button onClick={() => { setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}
-            className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium"
-            style={{ background: "rgba(239,68,68,0.1)", color: "#dc2626" }}>
-            <Trash2 className="w-3.5 h-3.5" /> Delete
-          </button>
-        </div>
+        <PropertiesPanel
+          selected={selected}
+          selectedId={selectedId!}
+          setElements={setElements}
+          onDelete={() => { setElements(prev => prev.filter(el => el.id !== selectedId)); setSelectedId(null); }}
+        />
       )}
     </div>
   );
